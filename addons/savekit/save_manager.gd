@@ -13,6 +13,10 @@ extends Node
 
 @export var save_game_directory: String = "user://save_games/"
 
+signal saved_node(node: Node)
+signal loaded_node(node: Node, from_scene: PackedScene)
+signal removed_unsaved_node(node: Node)
+
 const _SERIALIZATION_VERSION: int = 1
 const _SERIALIZATION_VERSION_KEY: String = "__savekit_version"
 const _SCENE_FILE_PATH_KEY: String = "__scene_file_path"
@@ -27,10 +31,6 @@ func serialize_tree() -> Dictionary:
 		var node_path: Variant = node.get(save_path_override_key)
 		if not node_path:
 			node_path = node.get_path()
-		
-		# TODO: Replace with configurable logging
-		# TODO: Fire signal or callback?
-		print("Saving node: ", node_path)
 
 		var node_dict: Variant = node.call(save_to_dict_method)
 		if node_dict is not Dictionary:
@@ -41,6 +41,7 @@ func serialize_tree() -> Dictionary:
 			node_dict[_SCENE_FILE_PATH_KEY] = node.scene_file_path
 		
 		save_dict[node_path] = node_dict
+		saved_node.emit(node)
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_save_method)
 	
@@ -60,10 +61,6 @@ func deserialize_tree(data: Dictionary) -> Error:
 	
 	var loaded_nodes: Array[Node]
 	for node_path: NodePath in node_paths:
-		# TODO: Replace with configurable logging
-		# TODO: Fire signal or callback?
-		print("Loading node: ", node_path)
-
 		var node_dict: Dictionary = data[str(node_path)]
 		node_dict = node_dict.duplicate()
 
@@ -72,6 +69,7 @@ func deserialize_tree(data: Dictionary) -> Error:
 		node_dict.erase(_SCENE_FILE_PATH_KEY)
 
 		var node := scene_tree.root.get_node_or_null(node_path)
+		var scene: PackedScene
 		if not node:
 			var parent_path := node_path.slice(0, -1)
 			var parent_node := scene_tree.root.get_node_or_null(parent_path)
@@ -83,14 +81,10 @@ func deserialize_tree(data: Dictionary) -> Error:
 				push_error("Cannot instantiate node ", node_path, " that is missing from the scene tree, as it has no scene file path")
 				continue
 			
-			var scene: PackedScene = safe_load_resource(scene_file_path, "tscn")
+			scene = safe_load_resource(scene_file_path, "tscn")
 			if not scene:
 				push_error("Failed to load scene for node ", node_path, " from path ", scene_file_path)
 				continue
-			
-			# TODO: Replace with configurable logging
-			# TODO: Fire signal or callback?
-			print("Instantiating node ", node_path, " from scene ", scene_file_path)
 
 			node = scene.instantiate()
 			node.name = node_path.get_name(node_path.get_name_count() - 1)
@@ -102,13 +96,12 @@ func deserialize_tree(data: Dictionary) -> Error:
 		
 		node.call(load_from_dict_method, node_dict)
 		loaded_nodes.append(node)
+		loaded_node.emit(node, scene)
 	
 	for node in scene_tree.get_nodes_in_group(saveable_group):
 		if node not in loaded_nodes:
-			# TODO: Replace with configurable logging
-			# TODO: Fire signal or callback?
-			print("Removing node from tree which wasn't saved: ", node.get_path())
 			node.queue_free()
+			removed_unsaved_node.emit(node)
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_load_method)
 	return OK
