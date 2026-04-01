@@ -40,7 +40,7 @@ func serialize_tree() -> Dictionary:
 		if node.scene_file_path:
 			node_dict[_SCENE_FILE_PATH_KEY] = node.scene_file_path
 		
-		save_dict[node_path] = node_dict
+		save_dict[str(node_path)] = node_dict
 		saved_node.emit(node)
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_save_method)
