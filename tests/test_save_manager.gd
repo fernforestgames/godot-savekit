@@ -4,6 +4,7 @@ extends GutTest
 const SaveManager := preload("res://addons/savekit/save_manager.gd")
 const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
 const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
+const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
 
 class MockSaveableWithOverride extends MockSaveable:
 	var save_path_override: Variant = null
@@ -21,6 +22,14 @@ func _make_saveable(save_data: Dictionary = {}, node_name: String = "Saveable") 
 	var node := MockSaveable.new()
 	node.name = node_name
 	node._save_data = save_data
+	add_child_autofree(node)
+	node.add_to_group("saveable")
+	return node
+
+
+func _make_default_saveable(node_name: String = "DefaultSaveable") -> MockDefaultSaveable:
+	var node := MockDefaultSaveable.new()
+	node.name = node_name
 	add_child_autofree(node)
 	node.add_to_group("saveable")
 	return node
@@ -351,3 +360,78 @@ func test_scene_instantiated_node_round_trip() -> void:
 	assert_eq(restored.loaded_data["coins"], 42)
 	assert_true(restored.is_in_group("saveable"))
 	assert_signal_emitted(_manager, "loaded_node")
+
+
+# =============================================================================
+# default_save_to_dict / default_load_from_dict (reflection-based fallback)
+# =============================================================================
+
+func test_default_save_captures_changed_properties() -> void:
+	var node := _make_default_saveable("DefaultNode")
+	node.health = 50
+	node.player_name = "Bob"
+
+	var result: Dictionary = _manager.serialize_tree()
+	var node_path := str(node.get_path())
+	assert_has(result, node_path)
+	assert_eq(result[node_path]["health"], JSON.from_native(50))
+	assert_eq(result[node_path]["player_name"], JSON.from_native("Bob"))
+
+
+func test_default_save_omits_properties_at_defaults() -> void:
+	var node := _make_default_saveable("AllDefaults")
+	# Leave all properties at their defaults
+
+	var result: Dictionary = _manager.serialize_tree()
+	var node_path := str(node.get_path())
+	assert_has(result, node_path)
+	assert_does_not_have(result[node_path], "health", "default value should not be serialized")
+	assert_does_not_have(result[node_path], "score", "default value should not be serialized")
+
+
+func test_default_load_sets_properties_on_node() -> void:
+	var node := _make_default_saveable("LoadTarget")
+	var node_path := str(node.get_path())
+	var data := {
+		SaveManager._SERIALIZATION_VERSION_KEY: SaveManager._SERIALIZATION_VERSION,
+		node_path: {
+			"health": JSON.from_native(25),
+			"player_name": JSON.from_native("Carol"),
+		},
+	}
+	var err: Error = _manager.deserialize_tree(data)
+	assert_eq(err, OK)
+	assert_eq(node.health, 25)
+	assert_eq(node.player_name, "Carol")
+	assert_eq(node.score, 0.0, "Untouched property stays at default")
+
+
+func test_default_round_trip() -> void:
+	var node := _make_default_saveable("RoundTripper")
+	node.health = 1
+	node.player_name = "Zara"
+	node.score = 77.7
+
+	var saved: Dictionary = _manager.serialize_tree()
+	# Reset properties before loading
+	node.health = 100
+	node.player_name = ""
+	node.score = 0.0
+
+	var err: Error = _manager.deserialize_tree(saved)
+	assert_eq(err, OK)
+	assert_eq(node.health, 1)
+	assert_eq(node.player_name, "Zara")
+	assert_almost_eq(node.score, 77.7, 0.001)
+
+
+func test_default_and_custom_nodes_coexist() -> void:
+	var custom_node := _make_saveable({"key": "custom_val"}, "CustomNode")
+	var default_node := _make_default_saveable("DefaultNode")
+	default_node.health = 10
+
+	var saved: Dictionary = _manager.serialize_tree()
+	assert_has(saved, str(custom_node.get_path()))
+	assert_has(saved, str(default_node.get_path()))
+	assert_eq(saved[str(custom_node.get_path())]["key"], "custom_val")
+	assert_eq(saved[str(default_node.get_path())]["health"], JSON.from_native(10))

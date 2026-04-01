@@ -38,7 +38,7 @@ static func get_script_default_property_values(script: Script, r_default_propert
 	if include_ancestors:
 		get_script_default_property_values(script.get_base_script(), r_default_property_values, include_ancestors)
 
-	for property in script.get_property_list():
+	for property in script.get_script_property_list():
 		var name: String = property["name"]
 		r_default_property_values[name] = script.get_property_default_value(name)
 
