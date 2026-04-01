@@ -14,6 +14,10 @@ config/name="SaveKit Demo"
 run/main_scene="res://demo/demo.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 
+[autoload]
+
+SaveManager="*uid://ck4ih2layufdo"
+
 [debug]
 
 gdscript/warnings/directory_rules={
@@ -25,6 +29,18 @@ gdscript/warnings/unsafe_property_access=2
 gdscript/warnings/unsafe_method_access=2
 gdscript/warnings/unsafe_call_argument=1
 gdscript/warnings/missing_await=1
+
+[display]
+
+window/subwindows/embed_subwindows=false
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/gut/plugin.cfg", "res://addons/savekit/plugin.cfg")
+
+[global_group]
+
+saveable=""
 
 [physics]
 

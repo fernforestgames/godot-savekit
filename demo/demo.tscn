@@ -1,16 +1,9 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene format=3 uid="uid://taoklfmwpvw7"]
 
-[ext_resource type="Script" path="res://demo/draggable.gd" id="1"]
-
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
-size = Vector2(70, 70)
-
-[sub_resource type="CircleShape2D" id="CircleShape2D_1"]
-radius = 25.0
-
-[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_1"]
-friction = 0.0
-bounce = 1.0
+[ext_resource type="Script" uid="uid://c45kd6wf5c6og" path="res://demo/draggable.gd" id="1"]
+[ext_resource type="Script" uid="uid://0metytbaec7a" path="res://demo/bouncy_ball.gd" id="2_dar0o"]
+[ext_resource type="PackedScene" uid="uid://eod8muj0qtxh" path="res://demo/save_explorer.tscn" id="2_ytiva"]
+[ext_resource type="Script" uid="uid://da5sodpv0gbv0" path="res://demo/notes_edit.gd" id="3_j5lb4"]
 
 [sub_resource type="WorldBoundaryShape2D" id="WBS_top"]
 normal = Vector2(0, 1)
@@ -23,97 +16,109 @@ normal = Vector2(1, 0)
 [sub_resource type="WorldBoundaryShape2D" id="WBS_right"]
 normal = Vector2(-1, 0)
 
-[node name="Demo" type="Node2D"]
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+size = Vector2(70, 70)
 
-[node name="Walls" type="StaticBody2D" parent="."]
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_1"]
+friction = 0.0
+bounce = 1.0
 
-[node name="Top" type="CollisionShape2D" parent="Walls"]
+[sub_resource type="CircleShape2D" id="CircleShape2D_1"]
+radius = 25.0
+
+[node name="Demo" type="Node2D" unique_id=385820067]
+
+[node name="Walls" type="StaticBody2D" parent="." unique_id=490144524]
+
+[node name="Top" type="CollisionShape2D" parent="Walls" unique_id=63109108]
 shape = SubResource("WBS_top")
 
-[node name="Bottom" type="CollisionShape2D" parent="Walls"]
+[node name="Bottom" type="CollisionShape2D" parent="Walls" unique_id=763764914]
 position = Vector2(0, 648)
 shape = SubResource("WBS_bottom")
 
-[node name="Left" type="CollisionShape2D" parent="Walls"]
+[node name="Left" type="CollisionShape2D" parent="Walls" unique_id=1120782054]
 shape = SubResource("WBS_left")
 
-[node name="Right" type="CollisionShape2D" parent="Walls"]
+[node name="Right" type="CollisionShape2D" parent="Walls" unique_id=405695309]
 position = Vector2(1152, 0)
 shape = SubResource("WBS_right")
 
-[node name="RedBox" type="Area2D" parent="."]
+[node name="RedBox" type="Area2D" parent="." unique_id=1118129485 groups=["saveable"]]
 position = Vector2(200, 300)
 script = ExtResource("1")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="RedBox"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RedBox" unique_id=1633385842]
 shape = SubResource("RectangleShape2D_1")
 
-[node name="Visual" type="Polygon2D" parent="RedBox"]
+[node name="Visual" type="Polygon2D" parent="RedBox" unique_id=426262710]
 color = Color(0.85, 0.25, 0.25, 1)
 polygon = PackedVector2Array(-35, -35, 35, -35, 35, 35, -35, 35)
 
-[node name="GreenBox" type="Area2D" parent="."]
+[node name="GreenBox" type="Area2D" parent="." unique_id=552215831 groups=["saveable"]]
 position = Vector2(500, 200)
 script = ExtResource("1")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="GreenBox"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="GreenBox" unique_id=1626560971]
 shape = SubResource("RectangleShape2D_1")
 
-[node name="Visual" type="Polygon2D" parent="GreenBox"]
+[node name="Visual" type="Polygon2D" parent="GreenBox" unique_id=1029770610]
 color = Color(0.25, 0.75, 0.25, 1)
 polygon = PackedVector2Array(-35, -35, 35, -35, 35, 35, -35, 35)
 
-[node name="BlueBox" type="Area2D" parent="."]
+[node name="BlueBox" type="Area2D" parent="." unique_id=216508533 groups=["saveable"]]
 position = Vector2(800, 400)
 script = ExtResource("1")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="BlueBox"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="BlueBox" unique_id=2051786203]
 shape = SubResource("RectangleShape2D_1")
 
-[node name="Visual" type="Polygon2D" parent="BlueBox"]
+[node name="Visual" type="Polygon2D" parent="BlueBox" unique_id=1763552229]
 color = Color(0.25, 0.4, 0.85, 1)
 polygon = PackedVector2Array(-35, -35, 35, -35, 35, 35, -35, 35)
 
-[node name="OrangeBall" type="RigidBody2D" parent="."]
+[node name="OrangeBall" type="RigidBody2D" parent="." unique_id=1550299188 groups=["saveable"]]
 position = Vector2(350, 150)
-gravity_scale = 0.0
-linear_damp_mode = 1
-linear_velocity = Vector2(150, 80)
 physics_material_override = SubResource("PhysicsMaterial_1")
+gravity_scale = 0.0
+linear_velocity = Vector2(150, 80)
+linear_damp_mode = 1
+script = ExtResource("2_dar0o")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="OrangeBall"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="OrangeBall" unique_id=946029017]
 shape = SubResource("CircleShape2D_1")
 
-[node name="Visual" type="Polygon2D" parent="OrangeBall"]
+[node name="Visual" type="Polygon2D" parent="OrangeBall" unique_id=1603491735]
 color = Color(0.95, 0.6, 0.15, 1)
 polygon = PackedVector2Array(25, 0, 23.1, 9.6, 17.7, 17.7, 9.6, 23.1, 0, 25, -9.6, 23.1, -17.7, 17.7, -23.1, 9.6, -25, 0, -23.1, -9.6, -17.7, -17.7, -9.6, -23.1, 0, -25, 9.6, -23.1, 17.7, -17.7, 23.1, -9.6)
 
-[node name="PurpleBall" type="RigidBody2D" parent="."]
+[node name="PurpleBall" type="RigidBody2D" parent="." unique_id=1282257284 groups=["saveable"]]
 position = Vector2(700, 350)
-gravity_scale = 0.0
-linear_damp_mode = 1
-linear_velocity = Vector2(-120, 100)
 physics_material_override = SubResource("PhysicsMaterial_1")
+gravity_scale = 0.0
+linear_velocity = Vector2(-120, 100)
+linear_damp_mode = 1
+script = ExtResource("2_dar0o")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="PurpleBall"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="PurpleBall" unique_id=1924442392]
 shape = SubResource("CircleShape2D_1")
 
-[node name="Visual" type="Polygon2D" parent="PurpleBall"]
+[node name="Visual" type="Polygon2D" parent="PurpleBall" unique_id=1460452117]
 color = Color(0.6, 0.25, 0.85, 1)
 polygon = PackedVector2Array(25, 0, 23.1, 9.6, 17.7, 17.7, 9.6, 23.1, 0, 25, -9.6, 23.1, -17.7, 17.7, -23.1, 9.6, -25, 0, -23.1, -9.6, -17.7, -17.7, -9.6, -23.1, 0, -25, 9.6, -23.1, 17.7, -17.7, 23.1, -9.6)
 
-[node name="UILayer" type="CanvasLayer" parent="."]
+[node name="UILayer" type="CanvasLayer" parent="." unique_id=1914578522]
 
-[node name="Instructions" type="Label" parent="UILayer"]
+[node name="Instructions" type="Label" parent="UILayer" unique_id=120977547]
 anchors_preset = 10
 anchor_right = 1.0
 offset_top = 10.0
 offset_bottom = 40.0
 grow_horizontal = 2
-horizontal_alignment = 1
 text = "Drag the colored boxes with your mouse. Balls bounce around the screen."
+horizontal_alignment = 1
 
-[node name="NotesPanel" type="PanelContainer" parent="UILayer"]
+[node name="NotesPanel" type="PanelContainer" parent="UILayer" unique_id=909757285]
 anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
@@ -126,21 +131,25 @@ offset_bottom = -10.0
 grow_horizontal = 0
 grow_vertical = 0
 
-[node name="MarginContainer" type="MarginContainer" parent="UILayer/NotesPanel"]
+[node name="MarginContainer" type="MarginContainer" parent="UILayer/NotesPanel" unique_id=1330226515]
 layout_mode = 2
 theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VBoxContainer" parent="UILayer/NotesPanel/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="UILayer/NotesPanel/MarginContainer" unique_id=488943323]
 layout_mode = 2
 
-[node name="NotesLabel" type="Label" parent="UILayer/NotesPanel/MarginContainer/VBoxContainer"]
+[node name="NotesLabel" type="Label" parent="UILayer/NotesPanel/MarginContainer/VBoxContainer" unique_id=1371475392]
 layout_mode = 2
 text = "Notes"
 
-[node name="NotesEdit" type="TextEdit" parent="UILayer/NotesPanel/MarginContainer/VBoxContainer"]
+[node name="NotesEdit" type="TextEdit" parent="UILayer/NotesPanel/MarginContainer/VBoxContainer" unique_id=185221698 groups=["saveable"]]
 layout_mode = 2
 size_flags_vertical = 3
 placeholder_text = "Type your notes here..."
+script = ExtResource("3_j5lb4")
+
+[node name="SaveExplorer" parent="." unique_id=1862897406 instance=ExtResource("2_ytiva")]
+visible = false
