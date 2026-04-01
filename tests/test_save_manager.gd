@@ -435,3 +435,31 @@ func test_default_and_custom_nodes_coexist() -> void:
 	assert_has(saved, str(default_node.get_path()))
 	assert_eq(saved[str(custom_node.get_path())]["key"], "custom_val")
 	assert_eq(saved[str(default_node.get_path())]["health"], JSON.from_native(10))
+
+
+func test_default_save_only_properties_filters_output() -> void:
+	var node := _make_default_saveable("Filtered")
+	node.health = 50
+	node.player_name = "Eve"
+	node.score = 3.14
+
+	var result := _manager.default_save_to_dict(node, PackedStringArray(["health", "score"]))
+	assert_has(result, "health")
+	assert_has(result, "score")
+	assert_does_not_have(result, "player_name", "player_name not in allowlist")
+
+
+func test_default_load_only_properties_filters_input() -> void:
+	var node := _make_default_saveable("FilteredLoad")
+	var data := {
+		"health": JSON.from_native(5),
+		"player_name": JSON.from_native("Nope"),
+		"score": JSON.from_native(42.0),
+	}
+
+	_manager.default_load_from_dict(node, data, PackedStringArray(["health", "score"]))
+	assert_eq(node.health, 5)
+	assert_eq(node.score, 42.0)
+	assert_eq(node.player_name, "", "player_name not in allowlist, should stay at default")
+
+

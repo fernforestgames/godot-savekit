@@ -57,10 +57,13 @@ func serialize_tree() -> Dictionary:
 	save_dict[_SERIALIZATION_VERSION_KEY] = _SERIALIZATION_VERSION
 	return save_dict
 
-func default_save_to_dict(node: Node) -> Dictionary:
+func default_save_to_dict(node: Node, only_properties: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var save_dict := {}
 	for property_dict in ReflectionUtils.get_storable_non_default_properties(node):
 		var property_name: String = property_dict["name"]
+		if only_properties and property_name not in only_properties:
+			continue
+
 		save_dict[property_name] = JSON.from_native(node.get(property_name))
 
 	return save_dict
@@ -128,8 +131,11 @@ func deserialize_tree(data: Dictionary) -> Error:
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_load_method)
 	return OK
 
-func default_load_from_dict(node: Node, data: Dictionary) -> void:
+func default_load_from_dict(node: Node, data: Dictionary, only_properties: PackedStringArray = PackedStringArray()) -> void:
 	for property_name: String in data:
+		if only_properties and property_name not in only_properties:
+			continue
+
 		node.set(property_name, JSON.to_native(data[property_name]))
 
 static func deserialize_sorted_node_paths(data: Dictionary) -> Array[NodePath]:
