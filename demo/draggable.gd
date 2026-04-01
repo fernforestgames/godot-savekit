@@ -1,5 +1,7 @@
 extends Area2D
 
+const ReflectionUtils := preload("res://addons/savekit/reflection_utils.gd")
+
 var _dragging: bool = false
 var _drag_offset: Vector2 = Vector2.ZERO
 
@@ -20,11 +22,4 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		global_position = get_global_mouse_position() + _drag_offset
 
-func save_to_dict() -> Dictionary:
-	return {
-		"position": JSON.from_native(position),
-	}
-
-func load_from_dict(data: Dictionary) -> void:
-	if "position" in data:
-		position = JSON.to_native(data["position"])
+# Uses default_save_to_dict() and default_load_from_dict() from SaveManager

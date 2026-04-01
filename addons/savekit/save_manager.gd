@@ -17,6 +17,8 @@ signal saved_node(node: Node)
 signal loaded_node(node: Node, from_scene: PackedScene)
 signal removed_unsaved_node(node: Node)
 
+const ReflectionUtils := preload("reflection_utils.gd")
+
 const _SERIALIZATION_VERSION: int = 1
 const _SERIALIZATION_VERSION_KEY: String = "__savekit_version"
 const _SCENE_FILE_PATH_KEY: String = "__scene_file_path"
@@ -35,10 +37,14 @@ func serialize_tree() -> Dictionary:
 		if not node_path:
 			node_path = node.get_path()
 
-		var node_dict: Variant = node.call(save_to_dict_method)
-		if node_dict is not Dictionary:
-			push_error("Node ", node_path, " did not return a dictionary from ", save_to_dict_method, "()")
-			continue
+		var node_dict: Variant
+		if node.has_method(save_to_dict_method):
+			node_dict = node.call(save_to_dict_method)
+			if node_dict is not Dictionary:
+				push_error("Node ", node_path, " did not return a dictionary from ", save_to_dict_method, "()")
+				continue
+		else:
+			node_dict = default_save_to_dict(node)
 		
 		if node.scene_file_path:
 			node_dict[_SCENE_FILE_PATH_KEY] = node.scene_file_path
@@ -49,6 +55,14 @@ func serialize_tree() -> Dictionary:
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_save_method)
 	
 	save_dict[_SERIALIZATION_VERSION_KEY] = _SERIALIZATION_VERSION
+	return save_dict
+
+func default_save_to_dict(node: Node) -> Dictionary:
+	var save_dict := {}
+	for property_dict in ReflectionUtils.get_storable_non_default_properties(node):
+		var property_name: String = property_dict["name"]
+		save_dict[property_name] = JSON.from_native(node.get(property_name))
+
 	return save_dict
 
 func deserialize_tree(data: Dictionary) -> Error:
@@ -97,7 +111,11 @@ func deserialize_tree(data: Dictionary) -> Error:
 			push_warning("Node ", node_path, " is not in the \"", saveable_group, "\" group, refusing to load it")
 			continue
 		
-		node.call(load_from_dict_method, node_dict)
+		if node.has_method(load_from_dict_method):
+			node.call(load_from_dict_method, node_dict)
+		else:
+			default_load_from_dict(node, node_dict)
+
 		loaded_nodes.append(node)
 		loaded_node.emit(node, scene)
 	
@@ -109,6 +127,10 @@ func deserialize_tree(data: Dictionary) -> Error:
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_load_method)
 	return OK
+
+func default_load_from_dict(node: Node, data: Dictionary) -> void:
+	for property_name: String in data:
+		node.set(property_name, JSON.to_native(data[property_name]))
 
 static func deserialize_sorted_node_paths(data: Dictionary) -> Array[NodePath]:
 	var node_paths: Array[NodePath]
