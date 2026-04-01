@@ -28,6 +28,9 @@ func serialize_tree() -> Dictionary:
 	var saveable_nodes := scene_tree.get_nodes_in_group(saveable_group)
 	var save_dict := {}
 	for node in saveable_nodes:
+		if node.is_queued_for_deletion():
+			continue
+
 		var node_path: Variant = node.get(save_path_override_key)
 		if not node_path:
 			node_path = node.get_path()
