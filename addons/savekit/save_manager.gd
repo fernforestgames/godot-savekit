@@ -18,6 +18,7 @@ signal loaded_node(node: Node, from_scene: PackedScene)
 signal removed_unsaved_node(node: Node)
 
 const ReflectionUtils := preload("reflection_utils.gd")
+const ResourceUtils := preload("resource_utils.gd")
 
 const _SERIALIZATION_VERSION: int = 1
 const _SERIALIZATION_VERSION_KEY: String = "__savekit_version"
@@ -101,7 +102,7 @@ func deserialize_tree(data: Dictionary) -> Error:
 				push_error("Cannot instantiate node ", node_path, " that is missing from the scene tree, as it has no scene file path")
 				continue
 			
-			scene = safe_load_resource(scene_file_path, "tscn")
+			scene = ResourceUtils.safe_load_resource(scene_file_path, "tscn")
 			if not scene:
 				push_error("Failed to load scene for node ", node_path, " from path ", scene_file_path)
 				continue
@@ -156,11 +157,3 @@ static func deserialize_sorted_node_paths(data: Dictionary) -> Array[NodePath]:
 		return a.get_name_count() < b.get_name_count())
 	
 	return node_paths
-
-static func safe_load_resource(path: String, extension: String) -> Resource:
-	path = path.simplify_path()
-	if not path.is_absolute_path() or not path.begins_with("res://") or not path.ends_with(".%s" % extension):
-		push_warning("Invalid resource path ", path, ", ignoring")
-		return null
-	
-	return load(path)
