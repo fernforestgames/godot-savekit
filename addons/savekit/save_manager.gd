@@ -98,6 +98,7 @@ func deserialize_tree(data: Dictionary) -> Error:
 		loaded_nodes.append(node)
 		loaded_node.emit(node, scene)
 	
+	# TODO: Does this need to be deferred?
 	for node in scene_tree.get_nodes_in_group(saveable_group):
 		if node not in loaded_nodes:
 			node.queue_free()
