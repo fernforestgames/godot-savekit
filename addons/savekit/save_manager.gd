@@ -102,7 +102,7 @@ func deserialize_tree(data: Dictionary) -> Error:
 				push_error("Cannot instantiate node ", node_path, " that is missing from the scene tree, as it has no scene file path")
 				continue
 			
-			scene = ResourceUtils.safe_load_resource(scene_file_path, "tscn")
+			scene = ResourceUtils.safe_load_resource(scene_file_path, ["tscn"])
 			if not scene:
 				push_error("Failed to load scene for node ", node_path, " from path ", scene_file_path)
 				continue
