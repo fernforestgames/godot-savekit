@@ -1,34 +1,9 @@
+@warning_ignore_start("unsafe_call_argument")
 extends GutTest
 
-const SaveManager = preload("res://addons/savekit/save_manager.gd")
-
-
-class MockSaveable extends Node:
-	var _save_data: Dictionary = {}
-	var before_save_called: bool = false
-	var after_save_called: bool = false
-	var before_load_called: bool = false
-	var after_load_called: bool = false
-	var loaded_data: Dictionary = {}
-
-	func before_save() -> void:
-		before_save_called = true
-
-	func after_save() -> void:
-		after_save_called = true
-
-	func save_to_dict() -> Dictionary:
-		return _save_data.duplicate()
-
-	func before_load() -> void:
-		before_load_called = true
-
-	func after_load() -> void:
-		after_load_called = true
-
-	func load_from_dict(data: Dictionary) -> void:
-		loaded_data = data
-
+const SaveManager := preload("res://addons/savekit/save_manager.gd")
+const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
+const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 
 class MockSaveableWithOverride extends MockSaveable:
 	var save_path_override: Variant = null
@@ -292,6 +267,47 @@ func test_deserialize_does_not_mutate_input_dict() -> void:
 
 
 # =============================================================================
+# deserialize_tree: PackedScene instantiation
+# =============================================================================
+
+func test_deserialize_instantiates_missing_node_from_scene() -> void:
+	# The node does NOT exist in the tree — deserialize should instantiate it
+	# from the scene file path embedded in the save data.
+	var parent := Node.new()
+	parent.name = "SceneParent"
+	add_child_autofree(parent)
+
+	var node_path := str(parent.get_path()) + "/MockSaveable"
+	var data := {
+		SaveManager._SERIALIZATION_VERSION_KEY: SaveManager._SERIALIZATION_VERSION,
+		node_path: {
+			"score": 99,
+			SaveManager._SCENE_FILE_PATH_KEY: "res://tests/fixtures/mock_saveable.tscn",
+		},
+	}
+
+	watch_signals(_manager)
+	var err: Error = _manager.deserialize_tree(data)
+	assert_eq(err, OK)
+
+	var created_node: MockSaveable = parent.get_node_or_null("MockSaveable")
+	assert_not_null(created_node, "Node should have been instantiated from PackedScene")
+	assert_true(created_node.is_in_group("saveable"), "Instantiated node should be added to saveable group")
+	assert_eq(created_node.loaded_data["score"], 99)
+	assert_signal_emitted(_manager, "loaded_node")
+
+
+func test_deserialize_fails_for_missing_node_without_scene_path() -> void:
+	var node_path := "/root/NonExistent/Orphan"
+	var data := {
+		SaveManager._SERIALIZATION_VERSION_KEY: SaveManager._SERIALIZATION_VERSION,
+		node_path: {"val": 1},
+	}
+	_manager.deserialize_tree(data)
+	assert_push_error("Cannot instantiate node")
+
+
+# =============================================================================
 # round-trip
 # =============================================================================
 
@@ -303,3 +319,35 @@ func test_serialize_then_deserialize_round_trip() -> void:
 	assert_eq(err, OK)
 	assert_eq(node.loaded_data["health"], 100)
 	assert_eq(node.loaded_data["position_x"], 5.5)
+
+
+func test_scene_instantiated_node_round_trip() -> void:
+	# Instantiate a node from a PackedScene (gives it a scene_file_path),
+	# serialize it, remove it, then deserialize — it should be re-instantiated.
+	var node: MockSaveable = MockSaveableScene.instantiate()
+	node.name = "SceneNode"
+	node._save_data = {"coins": 42}
+	add_child(node)
+	node.add_to_group("saveable")
+
+	var saved: Dictionary = _manager.serialize_tree()
+	var node_path := str(node.get_path())
+
+	# Verify the scene file path was captured in the serialized data
+	assert_has(saved[node_path], SaveManager._SCENE_FILE_PATH_KEY)
+	assert_eq(saved[node_path][SaveManager._SCENE_FILE_PATH_KEY], "res://tests/fixtures/mock_saveable.tscn")
+
+	# Remove the node so deserialize must re-instantiate it from the scene
+	remove_child(node)
+	node.free()
+
+	watch_signals(_manager)
+	var err: Error = _manager.deserialize_tree(saved)
+	assert_eq(err, OK)
+
+	var restored: MockSaveable = get_node_or_null("SceneNode")
+	assert_not_null(restored, "Node should have been re-instantiated from its scene")
+	autoqfree(restored)
+	assert_eq(restored.loaded_data["coins"], 42)
+	assert_true(restored.is_in_group("saveable"))
+	assert_signal_emitted(_manager, "loaded_node")
