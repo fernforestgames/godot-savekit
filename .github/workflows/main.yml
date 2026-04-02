@@ -1,0 +1,33 @@
+on:
+  push:
+    branches:
+      - main
+
+    paths-ignore:
+      - ".gitattributes"
+      - ".gitignore"
+      - "README.md"
+
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Godot
+        working-directory: ${{ env.RUNNER_TEMP }}
+        run: |
+          curl -sL https://github.com/godotengine/godot-builds/releases/download/4.6.2-stable/Godot_v4.6.2-stable_linux.x86_64.zip -o godot.zip
+          unzip godot.zip
+          mv Godot_v4.6.2-stable_linux.x86_64 "$RUNNER_TEMP/godot"
+
+      - uses: actions/checkout@v6
+
+      - name: Import project
+        run: |
+          "$RUNNER_TEMP/godot" --headless --import
+
+      - name: Run tests
+        run: |
+          "$RUNNER_TEMP/godot" --headless --script "addons/gut/gut_cmdln.gd"
