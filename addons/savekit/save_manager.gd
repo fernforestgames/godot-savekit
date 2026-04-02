@@ -4,156 +4,73 @@ extends Node
 
 @export var before_save_method: StringName = &"before_save"
 @export var after_save_method: StringName = &"after_save"
-@export var save_to_dict_method: StringName = &"save_to_dict"
-@export var save_path_override_key: StringName = &"save_path_override"
 
 @export var before_load_method: StringName = &"before_load"
 @export var after_load_method: StringName = &"after_load"
-@export var load_from_dict_method: StringName = &"load_from_dict"
 
-@export var save_game_directory: String = "user://save_games/"
+# TODO: Looser coupling
+const JSONSerializer := preload("json_serializer.gd")
+const JSONDeserializer := preload("json_deserializer.gd")
 
-signal saved_node(node: Node)
-signal loaded_node(node: Node, from_scene: PackedScene)
-signal removed_unsaved_node(node: Node)
+signal finished_saving
+signal finished_loading
 
-const ReflectionUtils := preload("reflection_utils.gd")
-const ResourceUtils := preload("resource_utils.gd")
+signal node_saved(node: Node)
+signal node_loaded(node: Node)
 
-const _SERIALIZATION_VERSION: int = 1
-const _SERIALIZATION_VERSION_KEY: String = "__savekit_version"
-const _SCENE_FILE_PATH_KEY: String = "__scene_file_path"
+signal node_created(node: Node)
+signal node_removed(node: Node)
 
-func serialize_tree() -> Dictionary:
+func save_scene_tree() -> Dictionary:
 	var scene_tree := get_tree()
 	scene_tree.call_group(saveable_group, before_save_method)
 
+	var serializer := JSONSerializer.new()
+
 	var saveable_nodes := scene_tree.get_nodes_in_group(saveable_group)
-	var save_dict := {}
 	for node in saveable_nodes:
 		if node.is_queued_for_deletion():
+			push_warning("Node ", node.get_path(), " is queued for deletion, skipping it during save")
 			continue
-
-		var node_path: Variant = node.get(save_path_override_key)
-		if not node_path:
-			node_path = node.get_path()
-
-		var node_dict: Variant
-		if node.has_method(save_to_dict_method):
-			node_dict = node.call(save_to_dict_method)
-			if node_dict is not Dictionary:
-				push_error("Node ", node_path, " did not return a dictionary from ", save_to_dict_method, "()")
-				continue
-		else:
-			node_dict = default_save_to_dict(node)
 		
-		if node.scene_file_path:
-			node_dict[_SCENE_FILE_PATH_KEY] = node.scene_file_path
-		
-		save_dict[str(node_path)] = node_dict
-		saved_node.emit(node)
+		serializer.save_node(node)
+		node_saved.emit(node)
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_save_method)
-	
-	save_dict[_SERIALIZATION_VERSION_KEY] = _SERIALIZATION_VERSION
+
+	var save_dict := serializer.finalize_save()
+	finished_saving.emit()
 	return save_dict
 
-func default_save_to_dict(node: Node, only_properties: PackedStringArray = PackedStringArray()) -> Dictionary:
-	var save_dict := {}
-	for property_dict in ReflectionUtils.get_storable_non_default_properties(node):
-		var property_name: String = property_dict["name"]
-		if only_properties and property_name not in only_properties:
-			continue
-
-		save_dict[property_name] = JSON.from_native(node.get(property_name))
-
-	return save_dict
-
-func deserialize_tree(data: Dictionary) -> Error:
-	var serialization_version: int = data.get(_SERIALIZATION_VERSION_KEY, 0)
-	if serialization_version != _SERIALIZATION_VERSION:
-		push_error("Unsupported serialization version: ", serialization_version)
-		return ERR_INVALID_DATA
-
+func load_into_scene_tree(data: Dictionary) -> void:
 	var scene_tree := get_tree()
 	scene_tree.call_group(saveable_group, before_load_method)
 
-	var node_paths := deserialize_sorted_node_paths(data)
-	
+	var deserializer := JSONDeserializer.new(data)
+	deserializer.scene_tree = scene_tree
+	deserializer.saveable_node_group = saveable_group
+	deserializer.node_created.connect(_on_node_created)
+
 	var loaded_nodes: Array[Node]
-	for node_path: NodePath in node_paths:
-		var node_dict: Dictionary = data[str(node_path)]
-		node_dict = node_dict.duplicate()
-
-		@warning_ignore("shadowed_variable_base_class")
-		var scene_file_path: String = node_dict.get(_SCENE_FILE_PATH_KEY, "")
-		node_dict.erase(_SCENE_FILE_PATH_KEY)
-
-		var node := scene_tree.root.get_node_or_null(node_path)
-		var scene: PackedScene
+	while not deserializer.is_finished():
+		var node := deserializer.load_node()
 		if not node:
-			var parent_path := node_path.slice(0, -1)
-			var parent_node := scene_tree.root.get_node_or_null(parent_path)
-			if not parent_node:
-				push_warning("Could not find parent ", parent_path, " for node ", node_path, " while loading, adding to root")
-				parent_node = scene_tree.root
-			
-			if not scene_file_path:
-				push_error("Cannot instantiate node ", node_path, " that is missing from the scene tree, as it has no scene file path")
-				continue
-			
-			scene = ResourceUtils.safe_load_resource(scene_file_path, ["tscn"])
-			if not scene:
-				push_error("Failed to load scene for node ", node_path, " from path ", scene_file_path)
-				continue
-
-			node = scene.instantiate()
-			node.name = node_path.get_name(node_path.get_name_count() - 1)
-			parent_node.add_child(node)
-			node.add_to_group(saveable_group)
-		elif not node.is_in_group(saveable_group):
-			push_warning("Node ", node_path, " is not in the \"", saveable_group, "\" group, refusing to load it")
 			continue
-		
-		if node.has_method(load_from_dict_method):
-			node.call(load_from_dict_method, node_dict)
-		else:
-			default_load_from_dict(node, node_dict)
 
 		loaded_nodes.append(node)
-		loaded_node.emit(node, scene)
+		node_loaded.emit(node)
 	
 	# TODO: Does this need to be deferred?
 	for node in scene_tree.get_nodes_in_group(saveable_group):
 		if node not in loaded_nodes:
 			node.queue_free()
-			removed_unsaved_node.emit(node)
+			node_removed.emit(node)
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_load_method)
-	return OK
+	finished_loading.emit()
 
-func default_load_from_dict(node: Node, data: Dictionary, only_properties: PackedStringArray = PackedStringArray()) -> void:
-	for property_name: String in data:
-		if only_properties and property_name not in only_properties:
-			continue
-
-		node.set(property_name, JSON.to_native(data[property_name]))
-
-static func deserialize_sorted_node_paths(data: Dictionary) -> Array[NodePath]:
-	var node_paths: Array[NodePath]
-	node_paths.resize(data.size() - 1)
-
-	var index: int = 0
-	for path: String in data:
-		if path == _SERIALIZATION_VERSION_KEY:
-			continue
-		
-		node_paths[index] = NodePath(path)
-		index += 1
-
-	# Load nodes in order of depth, to ensure parents are loaded before children.
-	# We'll use this to instantiate any missing nodes along the way.
-	node_paths.sort_custom(func(a: NodePath, b: NodePath) -> bool:
-		return a.get_name_count() < b.get_name_count())
+func _on_node_created(node: Node) -> void:
+	if node.has_method(before_load_method):
+		node.call(before_load_method)
 	
-	return node_paths
+	node_created.emit(node)

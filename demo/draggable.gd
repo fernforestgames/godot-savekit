@@ -1,7 +1,5 @@
 extends Area2D
 
-const ReflectionUtils := preload("res://addons/savekit/reflection_utils.gd")
-
 var _dragging: bool = false
 var _drag_offset: Vector2 = Vector2.ZERO
 
@@ -22,4 +20,4 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		global_position = get_global_mouse_position() + _drag_offset
 
-# Uses default_save_to_dict() and default_load_from_dict() from SaveManager
+# Uses default_save_to_dict() and default_load_from_dict()

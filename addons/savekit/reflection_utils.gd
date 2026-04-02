@@ -11,7 +11,7 @@ static func get_storable_non_default_properties(obj: Object) -> Array[Dictionary
 	for property in property_list:
 		var name: String = property["name"]
 		if name == "script":
-			# Don't try to save script references
+			# Don't try to save script references here
 			continue
 
 		var usage: PropertyUsageFlags = property["usage"]

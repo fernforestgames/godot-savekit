@@ -18,16 +18,11 @@ func _on_load_button_pressed() -> void:
 		error_label.visible = true
 		return
 	
-	var err := SaveManager.deserialize_tree(save_data as Dictionary)
-	if err != OK:
-		error_label.text = "Error deserializing save data: " + str(err)
-		error_label.visible = true
-		return
-	
+	SaveManager.load_into_scene_tree(save_data as Dictionary)
 	error_label.visible = false
 
 func _on_save_button_pressed() -> void:
-	var save_data := SaveManager.serialize_tree()
+	var save_data := SaveManager.save_scene_tree()
 	code_edit.text = JSON.stringify(save_data, "\t")
 	error_label.visible = false
 
