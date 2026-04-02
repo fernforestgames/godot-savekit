@@ -16,7 +16,7 @@ func after_save() -> void:
 	after_save_called = true
 
 
-func save_to_dict() -> Dictionary:
+func save_to_dict(_serializer) -> Dictionary:
 	return _save_data.duplicate()
 
 
@@ -28,5 +28,5 @@ func after_load() -> void:
 	after_load_called = true
 
 
-func load_from_dict(data: Dictionary) -> void:
+func load_from_dict(_deserializer, data: Dictionary) -> void:
 	loaded_data = data
