@@ -1,17 +1,34 @@
 @abstract
 extends RefCounted
+## Base class for serializers that persist nodes into save data.
+##
+## Subclasses can implement custom save data formats by providing implementations for the abstract methods.
 
 const ReflectionUtils := preload("reflection_utils.gd")
 
+## The name for a method that Nodes can implement to customize how they are saved to a dictionary. The method should have the following signature:
+##
+## [codeblock]
+## func save_to_dict(serializer: Serializer) -> Dictionary
+## [/codeblock]
+##
+## Within this method, nodes can use the serializer's [method encode_var] method to encode values into the returned dictionary.
 var save_to_dict_method: StringName = &"save_to_dict"
+
+## Nodes are normally serialized in save data according to their path in the scene tree. However, in some cases it may be desirable to override this path (e.g., to deduplicate the saved node with its original instantiation in a packed scene).
+##
+## This is the name for a property (of type [NodePath]) that Nodes can implement to provide a custom node path when saving.
 var save_path_override_key: StringName = &"save_path_override"
 
+## Encodes a runtime value for saving, returning a value that can be persisted.
 @abstract
 func encode_var(value: Variant) -> Variant
 
+## Adds [param node] to the save data, serializing its properties according to [method save_node_to_dict].
 @abstract
 func save_node(node: Node) -> void
 
+## Saves data for [param node] into a dictionary, suitable for persisting.
 func save_node_to_dict(node: Node) -> Dictionary:
 	if not node.has_method(save_to_dict_method):
 		return default_save_to_dict(node)
@@ -23,20 +40,25 @@ func save_node_to_dict(node: Node) -> Dictionary:
 	
 	return save_dict
 
+## Implements the default behavior for [method save_node_to_dict], for the case where the node does not implement a custom [member save_to_dict_method]. This will serialize all of the node's exported properties that have a non-default value.
+##
+## This method can also be called from a custom [member save_to_dict_method] implementation, to save some properties automatically and implement custom behavior for others. [param only_properties] can be used to specify a subset of properties to save from the node.
 func default_save_to_dict(node: Node, only_properties: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var save_dict := {}
 	for property_dict in ReflectionUtils.get_storable_non_default_properties(node):
-		var property_name: String = property_dict["name"]
-		if only_properties and property_name not in only_properties:
+		var name: String = property_dict["name"]
+		if only_properties and name not in only_properties:
 			continue
 
-		save_dict[property_name] = encode_var(node.get(property_name))
+		var value: Variant = property_dict["value"]
+		save_dict[name] = encode_var(value)
 
 	return save_dict
 
+## Returns the [NodePath] to associate with [param node] in save data, honoring any value set for [member save_path_override_key].
 func save_path_for_node(node: Node) -> NodePath:
 	var path_override: Variant = node.get(save_path_override_key)
-	if path_override != null:
+	if path_override:
 		return path_override
 	
 	return node.get_path()

@@ -1,33 +1,71 @@
 extends Node
+## Coordinates saving and loading, using a configurable serializer and deserializer. This is the main entry point for saving and loading the scene tree.
+##
+## By default, this is installed as an autoload singleton named [code]SaveManager[/code] when the plugin is enabled, but it can also be used as a regular node if desired (e.g., to have multiple independent save managers with different configurations).
 
-@export var saveable_group: StringName = &"saveable"
+## A scene tree group containing all nodes that should be saved and loaded.
+##
+## [member Deserializer.saveable_node_group] will also be set to this value when the deserializer is created.
+@export var saveable_node_group: StringName = &"saveable"
 
+## The name for a method that Nodes can implement to perform actions before the SaveManager starts saving the scene tree.
+##
+## Will only be called on nodes that are members of [member saveable_node_group].
 @export var before_save_method: StringName = &"before_save"
+
+## The name for a method that Nodes can implement to perform actions after the SaveManager has saved the scene tree.
+##
+## Will only be called on nodes that are members of [member saveable_node_group].
 @export var after_save_method: StringName = &"after_save"
 
+## The name for a method that Nodes can implement to perform actions before the SaveManager starts loading the scene tree.
+##
+## Will only be called on nodes that are members of [member saveable_node_group] and [b]already in the scene tree[/b] before loading begins.
 @export var before_load_method: StringName = &"before_load"
+
+## The name for a method that Nodes can implement to perform actions after the SaveManager has loaded the scene tree.
+##
+## Will only be called on nodes that are members of [member saveable_node_group], including nodes added to the scene tree during loading. Nodes which were removed from the scene tree during loading will [b]not[/b] have this method called.
 @export var after_load_method: StringName = &"after_load"
 
 # TODO: Looser coupling
 const JSONSerializer := preload("json_serializer.gd")
 const JSONDeserializer := preload("json_deserializer.gd")
 
-signal finished_saving
-signal finished_loading
+## Emitted before the SaveManager starts saving the scene tree.
+signal before_save
 
+## Emitted after the SaveManager has saved the scene tree.
+signal after_save
+
+## Emitted before the SaveManager starts loading the scene tree.
+signal before_load
+
+## Emitted after the SaveManager has loaded the scene tree.
+signal after_load
+
+## Emitted after [param node] has been saved.
 signal node_saved(node: Node)
+
+## Emitted after [param node] has been loaded.
 signal node_loaded(node: Node)
 
+## Emitted when [param node] has been created and added to the scene tree, as part of the loading process.
 signal node_created(node: Node)
+
+## Emitted when [param node] has been removed from the scene tree, as part of the loading process.
 signal node_removed(node: Node)
 
+## Saves all [member saveable_node_group] nodes in the scene tree, returning a dictionary containing the saved data, suitable for persisting.
 func save_scene_tree() -> Dictionary:
+	before_save.emit()
+
 	var scene_tree := get_tree()
-	scene_tree.call_group(saveable_group, before_save_method)
+	scene_tree.call_group(saveable_node_group, before_save_method)
 
 	var serializer := JSONSerializer.new()
 
-	var saveable_nodes := scene_tree.get_nodes_in_group(saveable_group)
+	var saveable_nodes := scene_tree.get_nodes_in_group(saveable_node_group)
 	for node in saveable_nodes:
 		if node.is_queued_for_deletion():
 			push_warning("Node ", node.get_path(), " is queued for deletion, skipping it during save")
@@ -36,19 +74,22 @@ func save_scene_tree() -> Dictionary:
 		serializer.save_node(node)
 		node_saved.emit(node)
 	
-	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_save_method)
+	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_node_group, after_save_method)
 
 	var save_dict := serializer.finalize_save()
-	finished_saving.emit()
+	after_save.emit()
 	return save_dict
 
+## Loads [member saveable_node_group] nodes into the scene tree from the given save data. Nodes will be added, removed, and updated as needed to match the provided save data.
 func load_into_scene_tree(data: Dictionary) -> void:
+	before_load.emit()
+
 	var scene_tree := get_tree()
-	scene_tree.call_group(saveable_group, before_load_method)
+	scene_tree.call_group(saveable_node_group, before_load_method)
 
 	var deserializer := JSONDeserializer.new(data)
 	deserializer.scene_tree = scene_tree
-	deserializer.saveable_node_group = saveable_group
+	deserializer.saveable_node_group = saveable_node_group
 	deserializer.node_created.connect(_on_node_created)
 
 	var loaded_nodes: Array[Node]
@@ -61,16 +102,13 @@ func load_into_scene_tree(data: Dictionary) -> void:
 		node_loaded.emit(node)
 	
 	# TODO: Does this need to be deferred?
-	for node in scene_tree.get_nodes_in_group(saveable_group):
+	for node in scene_tree.get_nodes_in_group(saveable_node_group):
 		if node not in loaded_nodes:
 			node.queue_free()
 			node_removed.emit(node)
 	
-	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_group, after_load_method)
-	finished_loading.emit()
+	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_node_group, after_load_method)
+	after_load.emit()
 
 func _on_node_created(node: Node) -> void:
-	if node.has_method(before_load_method):
-		node.call(before_load_method)
-	
 	node_created.emit(node)

@@ -1,4 +1,5 @@
 extends "deserializer.gd"
+## Deserializes save data from JSON format.
 
 const JSONSerializer := preload("json_serializer.gd")
 
@@ -7,6 +8,7 @@ var _saved_nodes: Dictionary[NodePath, Dictionary]
 var _saved_resources_by_id: Dictionary[String, Dictionary]
 var _loaded_resources_by_id: Dictionary[String, SaveableResource]
 
+## Prepares the deserializer with the given save data, which should be a dictionary parsed from JSON.
 func _init(save_dict: Dictionary) -> void:
 	var version: int = save_dict.get(JSONSerializer._SERIALIZATION_VERSION_KEY, 0)
 	if version != JSONSerializer._SERIALIZATION_VERSION:
@@ -56,6 +58,9 @@ func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name
 		_:
 			return JSON.to_native(value)
 
+## Decodes a reference to a node expected in the scene tree at the given path.
+##
+## If the node does not already exist in the scene tree, but does exist in the save data, it will be instantiated and added to the tree. Returns null if the node cannot be found or instantiated.
 func decode_node_reference(node_path: NodePath) -> Node:
 	# To ensure we can convert this node path into a valid node reference, we need to effectively "preload" the target node and all of its ancestors.
 	# This process is similar to load_node(), but circumventing the normal order and without actually loading data into the nodes yet.
@@ -68,6 +73,9 @@ func decode_node_reference(node_path: NodePath) -> Node:
 	var scene_file_path: String = save_dict.get(JSONSerializer._NODE_SCENE_FILE_PATH_KEY, "")
 	return find_or_instantiate_node(node_path, scene_file_path)
 
+## Decodes a reference to a resource, loading it by UID or path as appropriate.
+##
+## Note: [param expected_class_name] should refer to a class that exists within [ClassDB] (i.e., built-in or GDExtension classes). It should [i]not[/i] contain the name of a script-defined [code]class_name[/code].
 func decode_resource_reference(resource_path: String, resource_uid: String = "", expected_class_name: StringName = &"") -> Resource:
 	if resource_uid:
 		var id := ResourceUID.text_to_id(resource_uid)
@@ -77,6 +85,7 @@ func decode_resource_reference(resource_path: String, resource_uid: String = "",
 	var allowed_extensions := ResourceLoader.get_recognized_extensions_for_type(expected_class_name if expected_class_name else &"Resource")
 	return ResourceUtils.safe_load_resource(resource_path, allowed_extensions)
 
+## Returns how many nodes remain to be loaded from the save data. This can be used to determine loading progress.
 func get_remaining_node_count() -> int:
 	return _node_deserialization_stack.size()
 
@@ -112,6 +121,7 @@ func _stack_sort_node_paths() -> Array[NodePath]:
 	
 	return node_paths
 
+## Loads a [SaveableResource] from the save data. If the resource has already been loaded, the existing instance will be returned.
 func load_resource(id: String) -> SaveableResource:
 	var resource: SaveableResource = _loaded_resources_by_id.get(id)
 	if not resource:

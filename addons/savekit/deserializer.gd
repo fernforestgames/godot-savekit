@@ -1,50 +1,91 @@
 @abstract
 extends RefCounted
+## Base class for deserializers that load saved data into nodes.
+##
+## Subclasses can implement custom save data formats by providing implementations for the abstract methods.
 
+## The scene tree for finding and adding nodes during loading. This must be set before loading any nodes.
 var scene_tree: SceneTree
 
+## The name for a method that Nodes can implement to customize how they are loaded from a dictionary. The method should have the following signature:
+##
+## [codeblock]
+## func load_from_dict(deserializer: Deserializer, data: Dictionary) -> void
+## [/codeblock]
+##
+## Within this method, nodes can use the deserializer's [method decode_var] method to decode values from the provided dictionary.
 var load_from_dict_method: StringName = &"load_from_dict"
 
+## A scene tree group for finding and adding nodes during loading.
+##
+## Nodes to be loaded must be in this group to be found, and nodes added to the tree during loading will be added to this group.
 var saveable_node_group: StringName = &"saveable"
 
+## Emitted when a new node is added to the scene tree during loading.
 signal node_created(node: Node)
 
 const ResourceUtils := preload("resource_utils.gd")
 
+## Decodes a saved value into a runtime value that can be set on a Node or Resource.
+##
+## Callers must provide [param expected_type] (and [param expected_class_name], if applicable) to guide the deserializer in how to decode the value. See [method default_load_from_dict] for an example.
+##
+## Note: [param expected_class_name] should refer to a class that exists within [ClassDB] (i.e., built-in or GDExtension classes). It should [i]not[/i] contain the name of a script-defined [code]class_name[/code].
 @abstract
 func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name: StringName = &"") -> Variant
 
+## Returns whether deserialization has finished (i.e., all nodes have been loaded).
 @abstract
 func is_finished() -> bool
 
+## Loads the next node from the save data, returning the loaded node or null if an error occurred. The node will be added to the scene tree automatically, if not already present.
+##
+## Internally, this will call [method find_or_instantiate_node] and [method load_node_from_dict].
+##
+## Note that a null return value does not necessarily mean that deserialization has finished. Call [method is_finished] to check.
 @abstract
 func load_node() -> Node
 
+## Loads data into [param node] from the given dictionary.
 func load_node_from_dict(node: Node, dict: Dictionary) -> void:
 	if not node.has_method(load_from_dict_method):
 		return default_load_from_dict(node, dict)
 
 	node.call(load_from_dict_method, self , dict)
 
+## Implements the default behavior for [method load_node_from_dict], for the case where the node does not implement a custom [member load_from_dict_method]. This will set the node's properties to the decoded values of [param data].
+##
+## This method can also be called from a custom [member load_from_dict_method] implementation, to load some properties automatically and implement custom behavior for others. [param only_properties] can be used to specify a subset of properties to load from [param data].
 func default_load_from_dict(node: Node, data: Dictionary, only_properties: PackedStringArray = PackedStringArray()) -> void:
 	var properties_by_name: Dictionary[String, Dictionary]
 	for property in node.get_property_list():
 		var name: String = property["name"]
 		properties_by_name[name] = property
 
-	for property_name: String in data:
-		if only_properties and property_name not in only_properties:
+	for name: String in data:
+		if only_properties and name not in only_properties:
 			continue
 
-		var property: Dictionary = properties_by_name.get(property_name, {})
+		var property: Dictionary = properties_by_name.get(name, {})
 		if not property:
-			push_warning("Cannot load saved property ", property_name, " not currently found on node ", node.get_path())
+			push_warning("Cannot load saved property ", name, " not currently found on node ", node.get_path())
+			continue
+
+		var usage_flags: PropertyUsageFlags = property["usage"]
+		if usage_flags & PROPERTY_USAGE_STORAGE == 0:
+			push_warning("Not loading property ", name, " with storage disabled")
 			continue
 		
+		var encoded_value: Variant = data[name]
 		var type: Variant.Type = property["type"]
 		var classname: StringName = property.get("class_name", &"")
-		node.set(property_name, decode_var(data[property_name], type, classname))
 
+		var decoded_value: Variant = decode_var(encoded_value, type, classname)
+		node.set(name, decoded_value)
+
+## Finds a node at [param node_path] in the scene tree, or instantiates it from [param scene_file_path] and adds it to the scene tree if it did not already exist. Returns null if the node could not be found or instantiated.
+##
+## The node must be a member of [member saveable_node_group] to be found successfully.
 func find_or_instantiate_node(node_path: NodePath, scene_file_path: String) -> Node:
 	if not scene_tree:
 		push_error("scene_tree must be set on deserializer to find or instantiate nodes")

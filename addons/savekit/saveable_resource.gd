@@ -1,14 +1,23 @@
 @abstract
 class_name SaveableResource
 extends Resource
+## Base class for user-defined resources that can be saved and loaded.
+##
+## [code]SaveableResource[/code]s are used instead of the base [Resource] class to clearly identify data that is meant for persistence in save files, versus resource data that is part of the game's PCK.
 
+## Emitted whenever this resource is saved.
 signal saved
+
+## Emitted whenever this resource is loaded.
 signal loaded
 
 const ReflectionUtils := preload("reflection_utils.gd")
 const Serializer := preload("serializer.gd")
 const Deserializer := preload("deserializer.gd")
 
+## Saves data for this resource into a dictionary, suitable for persisting. This will serialize all of the resource's exported properties that have a non-default value.
+##
+## This method can be overridden to implement custom saving behavior.
 func save_to_dict(s: Serializer) -> Dictionary:
 	var script: Script = get_script()
 	var script_property_default_values: Dictionary[String, Variant]
@@ -32,6 +41,9 @@ func save_to_dict(s: Serializer) -> Dictionary:
 	saved.emit()
 	return save_dict
 
+## Loads data into this resource from the given dictionary. This will set the resource's properties to the decoded values of [param data].
+##
+## This method can be overridden to implement custom loading behavior.
 func load_from_dict(s: Deserializer, data: Dictionary) -> void:
 	var properties_by_name: Dictionary[String, Dictionary]
 	for property: Dictionary in self.get_property_list():
