@@ -85,11 +85,13 @@ func _save_scene_tree(finalizer: Callable) -> Variant:
 	after_save.emit()
 	return result
 
+## Saves all [member saveable_node_group] nodes in the scene tree, returning a buffer containing the saved data.
 func save_scene_tree_in_memory() -> PackedByteArray:
 	return _save_scene_tree(func(serializer: Serializer) -> Variant:
 		return serializer.finalize_save_in_memory()
 	)
 
+## Saves all [member saveable_node_group] nodes in the scene tree, writing the saved data to the given file path. Returns an error if saving failed.
 func save_scene_tree_to_disk(path: String) -> Error:
 	return _save_scene_tree(func(serializer: Serializer) -> Variant:
 		return serializer.finalize_save_to_disk(path)
@@ -128,6 +130,9 @@ func _load_scene_tree(deserializer: Deserializer) -> void:
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_node_group, after_load_method)
 	after_load.emit()
 
+## Loads [member saveable_node_group] nodes into the scene tree from the given buffer of save data. Returns false if loading failed.
+##
+## Nodes will be added, removed, and updated as needed to match the provided save data.
 func load_scene_tree_from_memory(data: PackedByteArray) -> bool:
 	var deserializer := _before_load()
 	if not deserializer.prepare_load_from_memory(data):
@@ -136,6 +141,9 @@ func load_scene_tree_from_memory(data: PackedByteArray) -> bool:
 	_load_scene_tree(deserializer)
 	return true
 
+## Loads [member saveable_node_group] nodes into the scene tree from file at the given path. Returns an error if loading failed.
+##
+## Nodes will be added, removed, and updated as needed to match the provided save data.
 func load_scene_tree_from_file(path: String) -> Error:
 	var deserializer := _before_load()
 	var error := deserializer.prepare_load_from_file(path)
