@@ -13,22 +13,23 @@ func _make_deserializer(nodes: Dictionary = {}, resources: Dictionary = {}) -> J
 	var data := {"version": 1, "nodes": nodes}
 	if resources:
 		data["resources"] = resources
-	var d := JSONDeserializer.new(data)
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify(data).to_utf8_buffer())
 	d.scene_tree = get_tree()
 	d.saveable_node_group = &"saveable"
 	return d
 
 
 # =============================================================================
-# constructor
+# prepare_load_from_memory
 # =============================================================================
 
-func test_init_with_valid_data() -> void:
+func test_prepare_with_valid_data() -> void:
 	var d := _make_deserializer()
 	assert_true(d.is_finished())
 
 
-func test_init_with_nodes() -> void:
+func test_prepare_with_nodes() -> void:
 	var node := Node.new()
 	node.name = "TestNode"
 	add_child_autofree(node)
@@ -39,13 +40,15 @@ func test_init_with_nodes() -> void:
 	assert_false(d.is_finished())
 
 
-func test_init_with_invalid_version() -> void:
-	var _d := JSONDeserializer.new({"version": 999})
+func test_prepare_with_invalid_version() -> void:
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"version": 999}).to_utf8_buffer())
 	assert_push_error("Unsupported save data version")
 
 
-func test_init_with_missing_version() -> void:
-	var _d := JSONDeserializer.new({})
+func test_prepare_with_missing_version() -> void:
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"nodes": {}}).to_utf8_buffer())
 	assert_push_error("Unsupported save data version")
 
 
@@ -352,7 +355,8 @@ func test_instantiate_fails_without_scene_path() -> void:
 
 
 func test_instantiate_requires_scene_tree() -> void:
-	var d := JSONDeserializer.new({"version": 1, "nodes": {}})
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"version": 1, "nodes": {}}).to_utf8_buffer())
 	# scene_tree intentionally NOT set
 	var node := d.find_or_instantiate_node(NodePath("/root/Test"), "")
 	assert_null(node)
@@ -369,9 +373,10 @@ func test_load_resource_round_trip() -> void:
 	resource.item_name = "Potion"
 	resource.quantity = 5
 	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save()
+	var save_data := serializer.finalize_save_in_memory()
 
-	var d := JSONDeserializer.new(save_data)
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(save_data)
 	d.scene_tree = get_tree()
 	var loaded: SaveableResource = d.load_resource(ref["res"])
 	assert_not_null(loaded)
@@ -384,9 +389,10 @@ func test_load_resource_deduplicates() -> void:
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Shield"
 	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save()
+	var save_data := serializer.finalize_save_in_memory()
 
-	var d := JSONDeserializer.new(save_data)
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(save_data)
 	d.scene_tree = get_tree()
 	var loaded1 := d.load_resource(ref["res"])
 	var loaded2 := d.load_resource(ref["res"])

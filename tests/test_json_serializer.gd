@@ -12,6 +12,10 @@ class MockSaveableWithOverride extends MockSaveable:
 	var save_path_override: Variant = null
 
 
+func _parse_finalized(s: JSONSerializer) -> Dictionary:
+	return JSON.parse_string(s.finalize_save_in_memory().get_string_from_utf8())
+
+
 # =============================================================================
 # encode_var
 # =============================================================================
@@ -212,8 +216,8 @@ func test_save_node_stores_data() -> void:
 	node._save_data = {"key": "val"}
 	add_child_autofree(node)
 	s.save_node(node)
-	var result := s.finalize_save()
-	var path := node.get_path()
+	var result := _parse_finalized(s)
+	var path := str(node.get_path())
 	assert_has(result["nodes"], path)
 	assert_eq(result["nodes"][path]["key"], "val")
 
@@ -225,8 +229,8 @@ func test_save_node_includes_scene_file_path() -> void:
 	node._save_data = {}
 	add_child_autofree(node)
 	s.save_node(node)
-	var result := s.finalize_save()
-	var path := node.get_path()
+	var result := _parse_finalized(s)
+	var path := str(node.get_path())
 	assert_has(result["nodes"][path], "scene_file_path")
 	assert_eq(result["nodes"][path]["scene_file_path"], "res://tests/fixtures/mock_saveable.tscn")
 
@@ -238,8 +242,8 @@ func test_save_node_without_scene_file_path() -> void:
 	node._save_data = {"x": 1}
 	add_child_autofree(node)
 	s.save_node(node)
-	var result := s.finalize_save()
-	var path := node.get_path()
+	var result := _parse_finalized(s)
+	var path := str(node.get_path())
 	assert_does_not_have(result["nodes"][path], "scene_file_path")
 
 
@@ -265,12 +269,12 @@ func test_save_path_uses_override() -> void:
 
 
 # =============================================================================
-# finalize_save
+# finalize_save_in_memory
 # =============================================================================
 
 func test_finalize_returns_version_and_nodes() -> void:
 	var s := JSONSerializer.new()
-	var result := s.finalize_save()
+	var result := _parse_finalized(s)
 	assert_has(result, "version")
 	assert_eq(result["version"], 1)
 	assert_has(result, "nodes")
@@ -278,7 +282,7 @@ func test_finalize_returns_version_and_nodes() -> void:
 
 func test_finalize_omits_resources_when_none_saved() -> void:
 	var s := JSONSerializer.new()
-	var result := s.finalize_save()
+	var result := _parse_finalized(s)
 	assert_does_not_have(result, "resources")
 
 
@@ -287,7 +291,7 @@ func test_finalize_includes_resources_when_present() -> void:
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Sword"
 	s.save_resource(resource)
-	var result := s.finalize_save()
+	var result := _parse_finalized(s)
 	assert_has(result, "resources")
 	assert_true((result["resources"] as Dictionary).size() > 0)
 

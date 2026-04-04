@@ -53,7 +53,8 @@ func test_save_emits_saved_signal() -> void:
 # =============================================================================
 
 func test_load_sets_properties() -> void:
-	var d := JSONDeserializer.new({"version": 1, "nodes": {}})
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"version": 1, "nodes": {}}).to_utf8_buffer())
 	d.scene_tree = get_tree()
 	var resource := MockSaveableResource.new()
 	resource.load_from_dict(d, {
@@ -66,7 +67,8 @@ func test_load_sets_properties() -> void:
 
 
 func test_load_emits_loaded_signal() -> void:
-	var d := JSONDeserializer.new({"version": 1, "nodes": {}})
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"version": 1, "nodes": {}}).to_utf8_buffer())
 	d.scene_tree = get_tree()
 	var resource := MockSaveableResource.new()
 	watch_signals(resource)
@@ -75,7 +77,8 @@ func test_load_emits_loaded_signal() -> void:
 
 
 func test_load_emits_changed_signal() -> void:
-	var d := JSONDeserializer.new({"version": 1, "nodes": {}})
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"version": 1, "nodes": {}}).to_utf8_buffer())
 	d.scene_tree = get_tree()
 	var resource := MockSaveableResource.new()
 	watch_signals(resource)
@@ -95,7 +98,8 @@ func test_round_trip() -> void:
 	resource.weight = 2.5
 	var saved := resource.save_to_dict(s)
 
-	var d := JSONDeserializer.new({"version": 1, "nodes": {}})
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"version": 1, "nodes": {}}).to_utf8_buffer())
 	d.scene_tree = get_tree()
 	var loaded := MockSaveableResource.new()
 	loaded.load_from_dict(d, saved)
@@ -111,7 +115,8 @@ func test_round_trip_preserves_defaults_for_unset_properties() -> void:
 	# quantity and weight left at defaults
 	var saved := resource.save_to_dict(s)
 
-	var d := JSONDeserializer.new({"version": 1, "nodes": {}})
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(JSON.stringify({"version": 1, "nodes": {}}).to_utf8_buffer())
 	d.scene_tree = get_tree()
 	var loaded := MockSaveableResource.new()
 	loaded.load_from_dict(d, saved)
