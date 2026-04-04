@@ -28,9 +28,11 @@ extends Node
 ## Will only be called on nodes that are members of [member saveable_node_group], including nodes added to the scene tree during loading. Nodes which were removed from the scene tree during loading will [b]not[/b] have this method called.
 @export var after_load_method: StringName = &"after_load"
 
-# TODO: Looser coupling
-const JSONSerializer := preload("json_serializer.gd")
-const JSONDeserializer := preload("json_deserializer.gd")
+## The implementation of the [Serializer] interface to use for saving the scene tree.
+@export var serializer_script: Script = preload("json_serializer.gd")
+
+## The implementation of the [Deserializer] interface to use for loading the scene tree.
+@export var deserializer_script: Script = preload("json_deserializer.gd")
 
 ## Emitted before the SaveManager starts saving the scene tree.
 signal before_save
@@ -56,14 +58,17 @@ signal node_created(node: Node)
 ## Emitted when [param node] has been removed from the scene tree, as part of the loading process.
 signal node_removed(node: Node)
 
-## Saves all [member saveable_node_group] nodes in the scene tree, returning a dictionary containing the saved data, suitable for persisting.
-func save_scene_tree() -> Dictionary:
+const Deserializer := preload("deserializer.gd")
+const Serializer := preload("serializer.gd")
+
+func _save_scene_tree(finalizer: Callable) -> Variant:
 	before_save.emit()
 
 	var scene_tree := get_tree()
 	scene_tree.call_group(saveable_node_group, before_save_method)
 
-	var serializer := JSONSerializer.new()
+	@warning_ignore("unsafe_method_access")
+	var serializer: Serializer = serializer_script.new()
 
 	var saveable_nodes := scene_tree.get_nodes_in_group(saveable_node_group)
 	for node in saveable_nodes:
@@ -76,22 +81,34 @@ func save_scene_tree() -> Dictionary:
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_node_group, after_save_method)
 
-	var save_dict := serializer.finalize_save()
+	var result: Variant = finalizer.call(serializer)
 	after_save.emit()
-	return save_dict
+	return result
 
-## Loads [member saveable_node_group] nodes into the scene tree from the given save data. Nodes will be added, removed, and updated as needed to match the provided save data.
-func load_into_scene_tree(data: Dictionary) -> void:
+func save_scene_tree_in_memory() -> PackedByteArray:
+	return _save_scene_tree(func(serializer: Serializer) -> Variant:
+		return serializer.finalize_save_in_memory()
+	)
+
+func save_scene_tree_to_disk(path: String) -> Error:
+	return _save_scene_tree(func(serializer: Serializer) -> Variant:
+		return serializer.finalize_save_to_disk(path)
+	)
+
+func _before_load() -> Deserializer:
 	before_load.emit()
 
 	var scene_tree := get_tree()
 	scene_tree.call_group(saveable_node_group, before_load_method)
 
-	var deserializer := JSONDeserializer.new(data)
+	@warning_ignore("unsafe_method_access")
+	var deserializer: Deserializer = deserializer_script.new()
 	deserializer.scene_tree = scene_tree
 	deserializer.saveable_node_group = saveable_node_group
 	deserializer.node_created.connect(_on_node_created)
+	return deserializer
 
+func _load_scene_tree(deserializer: Deserializer) -> void:
 	var loaded_nodes: Array[Node]
 	while not deserializer.is_finished():
 		var node := deserializer.load_node()
@@ -102,6 +119,7 @@ func load_into_scene_tree(data: Dictionary) -> void:
 		node_loaded.emit(node)
 	
 	# TODO: Does this need to be deferred?
+	var scene_tree := get_tree()
 	for node in scene_tree.get_nodes_in_group(saveable_node_group):
 		if node not in loaded_nodes:
 			node.queue_free()
@@ -109,6 +127,23 @@ func load_into_scene_tree(data: Dictionary) -> void:
 	
 	scene_tree.call_group_flags(SceneTree.GROUP_CALL_REVERSE, saveable_node_group, after_load_method)
 	after_load.emit()
+
+func load_scene_tree_from_memory(data: PackedByteArray) -> bool:
+	var deserializer := _before_load()
+	if not deserializer.prepare_load_from_memory(data):
+		return false
+	
+	_load_scene_tree(deserializer)
+	return true
+
+func load_scene_tree_from_file(path: String) -> Error:
+	var deserializer := _before_load()
+	var error := deserializer.prepare_load_from_file(path)
+	if error != OK:
+		return error
+	
+	_load_scene_tree(deserializer)
+	return OK
 
 func _on_node_created(node: Node) -> void:
 	node_created.emit(node)

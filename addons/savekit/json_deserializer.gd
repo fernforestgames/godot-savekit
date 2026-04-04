@@ -8,16 +8,26 @@ var _saved_nodes: Dictionary[NodePath, Dictionary]
 var _saved_resources_by_id: Dictionary[String, Dictionary]
 var _loaded_resources_by_id: Dictionary[String, SaveableResource]
 
-## Prepares the deserializer with the given save data, which should be a dictionary parsed from JSON.
-func _init(save_dict: Dictionary) -> void:
+func prepare_load_from_memory(data: PackedByteArray) -> bool:
+	var json_string := data.get_string_from_utf8()
+	if not json_string:
+		push_error("Failed to decode UTF-8 from save data")
+		return false
+	
+	var save_dict := JSON.parse_string(json_string) as Dictionary
+	if not save_dict:
+		push_error("Failed to parse JSON from save data")
+		return false
+
 	var version: int = save_dict.get(JSONSerializer._SERIALIZATION_VERSION_KEY, 0)
 	if version != JSONSerializer._SERIALIZATION_VERSION:
 		push_error("Unsupported save data version: ", version)
-		return
+		return false
 	
 	_saved_nodes.assign(save_dict.get(JSONSerializer._NODES_KEY, {}) as Dictionary)
 	_saved_resources_by_id.assign(save_dict.get(JSONSerializer._RESOURCES_KEY, {}) as Dictionary)
 	_node_deserialization_stack = _stack_sort_node_paths()
+	return true
 
 func _notification(what: int) -> void:
 	match what:

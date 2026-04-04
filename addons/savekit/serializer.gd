@@ -28,6 +28,22 @@ func encode_var(value: Variant) -> Variant
 @abstract
 func save_node(node: Node) -> void
 
+## After all nodes have been saved using [method save_node], this method can be called to get the finalized save data.
+@abstract
+func finalize_save_in_memory() -> PackedByteArray
+
+## After all nodes have been saved using [method save_node], this method can be called to write the finalized save data to a file. Returns whether the file writing was successful.
+func finalize_save_to_disk(path: String) -> Error:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if not file:
+		return FileAccess.get_open_error()
+	
+	var bytes := finalize_save_in_memory()
+	if not file.store_buffer(bytes):
+		return file.get_error()
+	
+	return OK
+
 ## Saves data for [param node] into a dictionary, suitable for persisting.
 func save_node_to_dict(node: Node) -> Dictionary:
 	if not node.has_method(save_to_dict_method):

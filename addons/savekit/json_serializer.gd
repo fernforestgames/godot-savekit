@@ -26,8 +26,7 @@ func _notification(what: int) -> void:
 			if not _finalized and (_saved_nodes or _saved_resources_by_id):
 				push_warning("finalize_save() was not called on JSON serializer before it was freed. Data is not actually being saved!")
 
-## After all nodes have been saved using [method save_node], this method should be called to get the finalized save data as a JSON-compatible dictionary.
-func finalize_save() -> Dictionary:
+func finalize_save_in_memory() -> PackedByteArray:
 	var save_dict := {
 		_SERIALIZATION_VERSION_KEY: _SERIALIZATION_VERSION,
 		_NODES_KEY: _saved_nodes,
@@ -36,8 +35,9 @@ func finalize_save() -> Dictionary:
 	if _saved_resources_by_id:
 		save_dict[_RESOURCES_KEY] = _saved_resources_by_id
 	
+	var json_string := JSON.stringify(save_dict, "\t", false)
 	_finalized = true
-	return save_dict
+	return json_string.to_utf8_buffer()
 
 func encode_var(value: Variant) -> Variant:
 	match typeof(value):

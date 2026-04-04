@@ -26,6 +26,21 @@ signal node_created(node: Node)
 
 const ResourceUtils := preload("resource_utils.gd")
 
+## Prepares the deserializer with the given save data. Returns false if the save data is invalid.
+@abstract
+func prepare_load_from_memory(data: PackedByteArray) -> bool
+
+## Prepares the deserializer by loading save data from the given file path. Returns an error if loading failed.
+func prepare_load_from_file(path: String) -> Error:
+	var bytes := FileAccess.get_file_as_bytes(path)
+	if not bytes:
+		return FileAccess.get_open_error()
+	
+	if not prepare_load_from_memory(bytes):
+		return ERR_INVALID_DATA
+
+	return OK
+
 ## Decodes a saved value into a runtime value that can be set on a Node or Resource.
 ##
 ## Callers must provide [param expected_type] (and [param expected_class_name], if applicable) to guide the deserializer in how to decode the value. See [method default_load_from_dict] for an example.
