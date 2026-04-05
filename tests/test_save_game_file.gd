@@ -18,6 +18,19 @@ func test_sanitize_name_with_spaces() -> void:
 	assert_eq(result, "My Cool Save")
 
 
+func test_sanitize_multi_component_preserves_hierarchy() -> void:
+	var result := SaveGameFile.sanitize_save_name_components(PackedStringArray(["Game", "Slot1"]))
+	assert_eq(result, "Game/Slot1")
+
+
+func test_sanitize_invalid_chars_within_component_do_not_break_hierarchy() -> void:
+	# A slash inside a single component must be treated as an invalid
+	# character within that component rather than introducing a new
+	# directory separator.
+	var result := SaveGameFile.sanitize_save_name_components(PackedStringArray(["Game/Extra", "Slot1"]))
+	assert_eq(result, "Game_Extra/Slot1")
+
+
 func test_sanitize_replaces_dots_with_underscores() -> void:
 	var result := SaveGameFile.sanitize_save_name_components(PackedStringArray(["my.save.file"]))
 	assert_eq(result, "my_save_file")

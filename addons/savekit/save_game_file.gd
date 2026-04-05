@@ -23,7 +23,15 @@ var modified_at_datetime: String:
 ##
 ## Returns the sanitized path, which is guaranteed to be relative, or an empty string if the sanitized result is invalid.
 static func sanitize_save_name_components(components: PackedStringArray) -> String:
-	var save_path := "/".join(components).simplify_path().validate_filename().replace(".", "_")
+	if not components:
+		return ""
+
+	var validated_components: PackedStringArray
+	validated_components.resize(components.size())
+	for i in components.size():
+		validated_components[i] = components[i].validate_filename()
+
+	var save_path := "/".join(validated_components).simplify_path().replace(".", "_")
 	if save_path.is_absolute_path():
 		push_error("Save name must not be an absolute path: ", save_path)
 		return ""

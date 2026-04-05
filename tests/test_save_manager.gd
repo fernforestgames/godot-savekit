@@ -375,12 +375,22 @@ func test_save_game_populates_modified_time() -> void:
 
 
 func test_save_game_creates_nested_directories_for_multi_component_name() -> void:
-	# NOTE: validate_filename replaces `/` with `_`, so multi-component names
-	# are flattened into a single filename rather than creating subdirectories.
 	var save_file := _manager.save_game(PackedStringArray(["Game", "Slot1"]))
 	assert_not_null(save_file)
 	assert_true(FileAccess.file_exists(save_file.absolute_path))
-	assert_true(save_file.absolute_path.begins_with(_test_dir))
+	assert_eq(save_file.absolute_path, _test_dir.path_join("Game/Slot1.json"))
+	assert_eq(Array(save_file.save_name_components), ["Game", "Slot1"])
+	assert_true(DirAccess.dir_exists_absolute(_test_dir.path_join("Game")),
+		"Intermediate directory should be created on disk")
+
+
+func test_save_game_sanitizes_invalid_characters_without_collapsing_hierarchy() -> void:
+	# A slash inside a single component should be replaced rather than turning
+	# that component into a pair of subdirectories.
+	var save_file := _manager.save_game(PackedStringArray(["Campaign/Alt", "Save1"]))
+	assert_not_null(save_file)
+	assert_eq(Array(save_file.save_name_components), ["Campaign_Alt", "Save1"])
+	assert_true(FileAccess.file_exists(save_file.absolute_path))
 
 
 func test_save_game_uses_custom_file_extension() -> void:
@@ -455,6 +465,17 @@ func test_load_game_round_trip() -> void:
 	assert_eq(node.loaded_data["health"], 75)
 
 
+func test_load_game_round_trip_with_multi_component_name() -> void:
+	var node := _make_saveable({"health": 88}, "Hero")
+	var save_file := _manager.save_game(PackedStringArray(["Campaign", "Chapter1"]))
+	assert_not_null(save_file)
+
+	node.loaded_data = {}
+	var error := _manager.load_game(PackedStringArray(["Campaign", "Chapter1"]))
+	assert_eq(error, OK)
+	assert_eq(node.loaded_data["health"], 88)
+
+
 func test_load_game_returns_error_for_missing_file() -> void:
 	var error := _manager.load_game(PackedStringArray(["DoesNotExist"]))
 	assert_ne(error, OK, "Loading a non-existent save should return an error")
@@ -487,6 +508,15 @@ func test_get_save_file_at_path_returns_file_for_valid_path() -> void:
 	assert_eq(Array(result.save_name_components), ["Slot1"])
 
 
+func test_get_save_file_at_path_reconstructs_multi_component_save_name() -> void:
+	var saved := _manager.save_game(PackedStringArray(["Game", "Slot1"]))
+	assert_not_null(saved)
+
+	var result := _manager.get_save_file_at_path(saved.absolute_path)
+	assert_not_null(result)
+	assert_eq(Array(result.save_name_components), ["Game", "Slot1"])
+
+
 func test_get_save_file_at_path_returns_null_for_missing_file() -> void:
 	var missing := _test_dir.path_join("NotThere.json")
 	var result := _manager.get_save_file_at_path(missing)
@@ -513,8 +543,9 @@ func test_get_save_file_at_path_returns_null_when_path_equals_directory() -> voi
 # =============================================================================
 
 func test_list_save_files_returns_empty_when_directory_missing() -> void:
-	var save_manager: SaveManager = autofree(SaveManager.new())
-	var files := save_manager.list_save_files()
+	# Ensure the configured save directory doesn't exist on disk.
+	DirAccess.remove_absolute(_test_dir)
+	var files := _manager.list_save_files()
 	assert_eq(files.size(), 0)
 	assert_push_warning("Could not list save games directory")
 
@@ -550,15 +581,7 @@ func test_list_save_files_ignores_files_with_other_extensions() -> void:
 
 func test_list_save_files_recursive_finds_saves_in_subdirectories() -> void:
 	_manager.save_game(PackedStringArray(["TopLevel"]))
-
-	# Create a subdirectory with a save file inside it.
-	var subdir := _test_dir.path_join("nested")
-	DirAccess.make_dir_recursive_absolute(subdir)
-	var nested_save_path := subdir.path_join("Inner.json")
-	var file := FileAccess.open(nested_save_path, FileAccess.WRITE)
-	assert_not_null(file)
-	file.store_string("{\"version\":1,\"nodes\":{}}")
-	file.close()
+	_manager.save_game(PackedStringArray(["nested", "Inner"]))
 
 	var recursive_files := _manager.list_save_files("", true)
 	assert_eq(recursive_files.size(), 2)
@@ -603,14 +626,8 @@ func test_list_save_files_directory_outside_save_dir_returns_empty() -> void:
 
 func test_list_save_files_with_explicit_subdirectory() -> void:
 	_manager.save_game(PackedStringArray(["TopLevel"]))
+	_manager.save_game(PackedStringArray(["nested", "Inner"]))
 
-	var subdir := _test_dir.path_join("nested")
-	DirAccess.make_dir_recursive_absolute(subdir)
-	var file := FileAccess.open(subdir.path_join("Inner.json"), FileAccess.WRITE)
-	assert_not_null(file)
-	file.store_string("{\"version\":1,\"nodes\":{}}")
-	file.close()
-
-	var files := _manager.list_save_files(subdir)
+	var files := _manager.list_save_files(_test_dir.path_join("nested"))
 	assert_eq(files.size(), 1)
-	assert_eq(String(files[0].save_name_components[-1]), "Inner")
+	assert_eq(Array(files[0].save_name_components), ["nested", "Inner"])
