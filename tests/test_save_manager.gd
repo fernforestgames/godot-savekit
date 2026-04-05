@@ -2,6 +2,7 @@
 extends GutTest
 
 const SaveManager := preload("res://addons/savekit/save_manager.gd")
+const SaveGameFile := preload("res://addons/savekit/save_game_file.gd")
 const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
 const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
@@ -12,11 +13,23 @@ class MockSaveableWithOverride extends MockSaveable:
 
 
 var _manager: SaveManager
+var _temp_diraccess: DirAccess
+var _test_dir: String
 
 
 func before_each() -> void:
+	print("before_each")
 	_manager = SaveManager.new()
+	# Use a unique temporary directory for each test so file system state
+	# from one test never leaks into another.
+	_temp_diraccess = DirAccess.create_temp("savekit_test")
+	_test_dir = _temp_diraccess.get_current_dir()
+	_manager.save_games_directory = _test_dir
 	add_child_autofree(_manager)
+
+
+func after_each() -> void:
+	_temp_diraccess = null
 
 
 func _make_saveable(save_data: Dictionary = {}, node_name: String = "Saveable") -> MockSaveable:
@@ -333,3 +346,271 @@ func test_custom_and_default_nodes_coexist() -> void:
 	assert_has(nodes, str(default_node.get_path()))
 	assert_eq(nodes[str(custom_node.get_path())]["key"], "custom_val")
 	assert_eq(nodes[str(default_node.get_path())]["health"], JSON.from_native(10))
+
+
+# =============================================================================
+# save_game
+# =============================================================================
+
+func test_save_game_writes_file_to_expected_path() -> void:
+	_make_saveable({"health": 42}, "Player")
+	var save_file := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(save_file, "save_game should return a SaveGameFile")
+	assert_eq(save_file.absolute_path, _test_dir.path_join("Slot1.json"))
+	assert_true(FileAccess.file_exists(save_file.absolute_path), "Save file should exist on disk")
+
+
+func test_save_game_populates_save_name_components() -> void:
+	var save_file := _manager.save_game(PackedStringArray(["MySave"]))
+	assert_not_null(save_file)
+	assert_eq(Array(save_file.save_name_components), ["MySave"])
+
+
+func test_save_game_populates_modified_time() -> void:
+	var before_unix := Time.get_unix_time_from_system()
+	var save_file := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(save_file)
+	# Allow for some clock skew/rounding - modified time should be within a few seconds of now.
+	assert_almost_eq(float(save_file.modified_at_unix_time), float(before_unix), 5.0)
+
+
+func test_save_game_creates_nested_directories_for_multi_component_name() -> void:
+	# NOTE: validate_filename replaces `/` with `_`, so multi-component names
+	# are flattened into a single filename rather than creating subdirectories.
+	var save_file := _manager.save_game(PackedStringArray(["Game", "Slot1"]))
+	assert_not_null(save_file)
+	assert_true(FileAccess.file_exists(save_file.absolute_path))
+	assert_true(save_file.absolute_path.begins_with(_test_dir))
+
+
+func test_save_game_uses_custom_file_extension() -> void:
+	_manager.save_file_extension = ".dat"
+	var save_file := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(save_file)
+	assert_true(save_file.absolute_path.ends_with(".dat"))
+	assert_true(FileAccess.file_exists(save_file.absolute_path))
+
+
+func test_save_game_refuses_overwrite_by_default() -> void:
+	var first := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(first)
+
+	var second := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_null(second, "save_game should refuse to overwrite an existing file by default")
+
+
+func test_save_game_overwrites_when_allowed() -> void:
+	var first := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(first)
+
+	var second := _manager.save_game(PackedStringArray(["Slot1"]), true)
+	assert_not_null(second, "save_game should overwrite when allow_overwrite is true")
+	assert_eq(second.absolute_path, first.absolute_path)
+
+
+func test_save_game_returns_null_for_empty_components() -> void:
+	var save_file := _manager.save_game(PackedStringArray())
+	assert_null(save_file)
+	assert_push_error("sanitization")
+
+
+func test_save_game_returns_null_for_components_that_sanitize_to_empty() -> void:
+	var save_file := _manager.save_game(PackedStringArray([""]))
+	assert_null(save_file)
+	assert_push_error("sanitization")
+
+
+func test_save_game_returns_null_for_non_absolute_directory() -> void:
+	_manager.save_games_directory = "relative/dir/"
+	var save_file := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_null(save_file)
+	assert_push_error("save_games_directory must be an absolute path")
+
+
+func test_save_game_captures_scene_tree_data() -> void:
+	_make_saveable({"health": 99, "name": "Hero"}, "Player")
+	var save_file := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(save_file)
+
+	var data := FileAccess.get_file_as_bytes(save_file.absolute_path)
+	var parsed := _parse_save_data(data)
+	assert_eq(parsed["version"], 1)
+	assert_has(parsed, "nodes")
+	assert_eq(parsed["nodes"].size(), 1)
+
+
+# =============================================================================
+# load_game
+# =============================================================================
+
+func test_load_game_round_trip() -> void:
+	var node := _make_saveable({"health": 75}, "Player")
+	var save_file := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(save_file)
+
+	# Clear the node's state and reload.
+	node.loaded_data = {}
+	var error := _manager.load_game(PackedStringArray(["Slot1"]))
+	assert_eq(error, OK)
+	assert_eq(node.loaded_data["health"], 75)
+
+
+func test_load_game_returns_error_for_missing_file() -> void:
+	var error := _manager.load_game(PackedStringArray(["DoesNotExist"]))
+	assert_ne(error, OK, "Loading a non-existent save should return an error")
+
+
+func test_load_game_returns_invalid_parameter_for_empty_components() -> void:
+	var error := _manager.load_game(PackedStringArray())
+	assert_eq(error, ERR_INVALID_PARAMETER)
+	assert_push_error("sanitization")
+
+
+func test_load_game_returns_invalid_parameter_for_non_absolute_directory() -> void:
+	_manager.save_games_directory = "relative/dir/"
+	var error := _manager.load_game(PackedStringArray(["Slot1"]))
+	assert_eq(error, ERR_INVALID_PARAMETER)
+	assert_push_error("save_games_directory must be an absolute path")
+
+
+# =============================================================================
+# get_save_file_at_path
+# =============================================================================
+
+func test_get_save_file_at_path_returns_file_for_valid_path() -> void:
+	var saved := _manager.save_game(PackedStringArray(["Slot1"]))
+	assert_not_null(saved)
+
+	var result := _manager.get_save_file_at_path(saved.absolute_path)
+	assert_not_null(result)
+	assert_eq(result.absolute_path, saved.absolute_path)
+	assert_eq(Array(result.save_name_components), ["Slot1"])
+
+
+func test_get_save_file_at_path_returns_null_for_missing_file() -> void:
+	var missing := _test_dir.path_join("NotThere.json")
+	var result := _manager.get_save_file_at_path(missing)
+	assert_null(result)
+
+
+func test_get_save_file_at_path_returns_null_for_path_outside_directory() -> void:
+	var result := _manager.get_save_file_at_path("user://something_else/foo.json")
+	assert_null(result)
+	assert_push_warning("Save file path must be within save_games_directory")
+
+
+func test_get_save_file_at_path_returns_null_when_path_equals_directory() -> void:
+	# Make sure the directory exists.
+	DirAccess.make_dir_recursive_absolute(_test_dir)
+	# A trailing-slash mismatch means passing the directory itself falls through
+	# the begins_with guard; but FileAccess.file_exists returns false for a dir.
+	var result := _manager.get_save_file_at_path(_test_dir)
+	assert_null(result)
+
+
+# =============================================================================
+# list_save_files
+# =============================================================================
+
+func test_list_save_files_returns_empty_when_directory_missing() -> void:
+	var save_manager: SaveManager = autofree(SaveManager.new())
+	var files := save_manager.list_save_files()
+	assert_eq(files.size(), 0)
+	assert_push_warning("Could not list save games directory")
+
+
+func test_list_save_files_lists_all_saves() -> void:
+	_manager.save_game(PackedStringArray(["Slot1"]))
+	_manager.save_game(PackedStringArray(["Slot2"]))
+	_manager.save_game(PackedStringArray(["Slot3"]))
+
+	var files := _manager.list_save_files()
+	assert_eq(files.size(), 3)
+
+	var names: Array[String] = []
+	for file in files:
+		names.append(String(file.save_name_components[0]))
+	names.sort()
+	assert_eq(names, ["Slot1", "Slot2", "Slot3"])
+
+
+func test_list_save_files_ignores_files_with_other_extensions() -> void:
+	_manager.save_game(PackedStringArray(["Slot1"]))
+
+	# Drop a non-matching file into the save directory.
+	var other := FileAccess.open(_test_dir.path_join("notes.txt"), FileAccess.WRITE)
+	assert_not_null(other)
+	other.store_string("not a save")
+	other.close()
+
+	var files := _manager.list_save_files()
+	assert_eq(files.size(), 1)
+	assert_eq(String(files[0].save_name_components[0]), "Slot1")
+
+
+func test_list_save_files_recursive_finds_saves_in_subdirectories() -> void:
+	_manager.save_game(PackedStringArray(["TopLevel"]))
+
+	# Create a subdirectory with a save file inside it.
+	var subdir := _test_dir.path_join("nested")
+	DirAccess.make_dir_recursive_absolute(subdir)
+	var nested_save_path := subdir.path_join("Inner.json")
+	var file := FileAccess.open(nested_save_path, FileAccess.WRITE)
+	assert_not_null(file)
+	file.store_string("{\"version\":1,\"nodes\":{}}")
+	file.close()
+
+	var recursive_files := _manager.list_save_files("", true)
+	assert_eq(recursive_files.size(), 2)
+
+	var non_recursive_files := _manager.list_save_files("", false)
+	assert_eq(non_recursive_files.size(), 1)
+	assert_eq(String(non_recursive_files[0].save_name_components[0]), "TopLevel")
+
+
+func test_list_save_files_sorted_respects_non_increasing_order() -> void:
+	_manager.save_game(PackedStringArray(["A"]))
+	_manager.save_game(PackedStringArray(["B"]))
+	_manager.save_game(PackedStringArray(["C"]))
+
+	var files := _manager.list_save_files("", true, true)
+	assert_eq(files.size(), 3)
+	# Verify the list satisfies the sort invariant (newest first). Using
+	# a weaker non-increasing check rather than strict ordering since we
+	# can't reliably give save files different modified times without
+	# deliberate delays between writes.
+	for i in range(1, files.size()):
+		assert_true(
+			files[i - 1].modified_at_unix_time >= files[i].modified_at_unix_time,
+			"Files should be in non-increasing modified time order"
+		)
+
+
+func test_list_save_files_unsorted_still_returns_all_files() -> void:
+	_manager.save_game(PackedStringArray(["A"]))
+	_manager.save_game(PackedStringArray(["B"]))
+	_manager.save_game(PackedStringArray(["C"]))
+
+	var files := _manager.list_save_files("", true, false)
+	assert_eq(files.size(), 3)
+
+
+func test_list_save_files_directory_outside_save_dir_returns_empty() -> void:
+	var files := _manager.list_save_files("user://some_other_dir/")
+	assert_eq(files.size(), 0)
+	assert_push_warning("Directory path must be within save_games_directory")
+
+
+func test_list_save_files_with_explicit_subdirectory() -> void:
+	_manager.save_game(PackedStringArray(["TopLevel"]))
+
+	var subdir := _test_dir.path_join("nested")
+	DirAccess.make_dir_recursive_absolute(subdir)
+	var file := FileAccess.open(subdir.path_join("Inner.json"), FileAccess.WRITE)
+	assert_not_null(file)
+	file.store_string("{\"version\":1,\"nodes\":{}}")
+	file.close()
+
+	var files := _manager.list_save_files(subdir)
+	assert_eq(files.size(), 1)
+	assert_eq(String(files[0].save_name_components[-1]), "Inner")

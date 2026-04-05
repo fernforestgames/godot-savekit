@@ -120,9 +120,9 @@ func save_game(save_name_components: PackedStringArray, allow_overwrite: bool = 
 	if not save_path:
 		push_error("After sanitization, save name components resulted in an empty filename: ", save_name_components)
 		return null
-	
+
 	var sanitized_save_name_components := save_path.split("/")
-	var absolute_path := save_games_directory.path_join(save_path + save_file_extension)
+	var absolute_path := _normalized_save_games_directory().path_join(save_path + save_file_extension)
 	if not allow_overwrite and FileAccess.file_exists(absolute_path):
 		push_warning("Disallowing overwriting save file: ", absolute_path)
 		return null
@@ -209,25 +209,22 @@ func load_game(save_name_components: PackedStringArray) -> Error:
 	if not save_path:
 		push_error("After sanitization, save name components resulted in an empty filename: ", save_name_components)
 		return ERR_INVALID_PARAMETER
-	
-	var absolute_path := save_games_directory.path_join(save_path + save_file_extension)
+
+	var absolute_path := _normalized_save_games_directory().path_join(save_path + save_file_extension)
 	return load_scene_tree_from_file(absolute_path)
 
 ## Looks up a save game file by its absolute path, or returns null if the path doesn't point to a valid save game file. The path must be within [member save_games_directory].
 func get_save_file_at_path(path: String) -> SaveGameFile:
 	path = path.simplify_path()
-	if not path.begins_with(save_games_directory):
+	var normalized_dir := _normalized_save_games_directory()
+	if not path.begins_with(normalized_dir):
 		push_warning("Save file path must be within save_games_directory: ", path)
 		return null
 
 	if not FileAccess.file_exists(path):
 		return null
-	
-	var relative_path := path.substr(save_games_directory.length())
-	if not relative_path:
-		push_warning("Given save file path is the same as save_games_directory, expected a file within that directory: ", path)
-		return null
-	
+
+	var relative_path := path.substr(normalized_dir.length())
 	var save_game_file := SaveGameFile.new()
 	save_game_file.save_name_components = relative_path.get_basename().split("/")
 	save_game_file.absolute_path = path
@@ -242,13 +239,16 @@ func get_save_file_at_path(path: String) -> SaveGameFile:
 ##
 ## If [param sort_by_modified_time] is true, the resulting list will be sorted by modified time, with the most recently modified save games first. Otherwise, the order is not guaranteed.
 func list_save_files(directory_path: String = "", recursive: bool = true, sort_by_modified_time: bool = true) -> Array[SaveGameFile]:
+	var normalized_dir := _normalized_save_games_directory()
 	if directory_path:
 		directory_path = directory_path.simplify_path()
-		if not directory_path.begins_with(save_games_directory):
+		if not directory_path.ends_with("/"):
+			directory_path += "/"
+		if not directory_path.begins_with(normalized_dir):
 			push_warning("Directory path must be within save_games_directory: ", directory_path)
 			return []
 	else:
-		directory_path = save_games_directory
+		directory_path = normalized_dir
 	
 	var dir := DirAccess.open(directory_path)
 	if not dir:
@@ -285,3 +285,9 @@ func list_save_files(directory_path: String = "", recursive: bool = true, sort_b
 
 func _on_node_created(node: Node) -> void:
 	node_created.emit(node)
+
+# Returns [member save_games_directory] normalized to always end with a trailing slash,
+# so path comparisons and substring arithmetic behave consistently regardless of
+# whether the user configured the directory with a trailing slash or not.
+func _normalized_save_games_directory() -> String:
+	return save_games_directory if save_games_directory.ends_with("/") else save_games_directory + "/"
