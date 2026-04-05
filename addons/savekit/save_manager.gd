@@ -34,6 +34,12 @@ extends Node
 ## The implementation of the [Deserializer] interface to use for loading the scene tree.
 @export var deserializer_script: Script = preload("json_deserializer.gd")
 
+## The directory to save and load games to/from.
+@export_dir var save_games_directory: String = "user://save_games/"
+
+## The extension to use with save game files, or an empty string to have no extension. Should include the dot if specified (e.g., [code].json[/code]).
+@export var save_file_extension: String = ".json"
+
 ## Emitted before the SaveManager starts saving the scene tree.
 signal before_save
 
@@ -59,6 +65,7 @@ signal node_created(node: Node)
 signal node_removed(node: Node)
 
 const Deserializer := preload("deserializer.gd")
+const SaveGameFile := preload("save_game_file.gd")
 const Serializer := preload("serializer.gd")
 
 func _save_scene_tree(finalizer: Callable) -> Variant:
@@ -92,10 +99,49 @@ func save_scene_tree_in_memory() -> PackedByteArray:
 	)
 
 ## Saves all [member saveable_node_group] nodes in the scene tree, writing the saved data to the given file path. Returns an error if saving failed.
-func save_scene_tree_to_disk(path: String) -> Error:
+func save_scene_tree_to_disk(absolute_path: String) -> Error:
 	return _save_scene_tree(func(serializer: Serializer) -> Variant:
-		return serializer.finalize_save_to_disk(path)
+		return serializer.finalize_save_to_disk(absolute_path)
 	)
+
+## Creates a save game file, naming it according to [param save_name_components], and optionally overwriting any existing file.
+##
+## On disk, [param save_name_components] is used to create separate save game directories inside [member save_games_directory]. In game, this could be used, for example, to differentiate individual games [i]as well as[/i] different save slots within those games (e.g., [code]"My Cool Game", "Autosave 1"[/code]).
+##
+## Since these names may come from user input, the components are sanitized and validated before being assigned to this property. The resulting text may not exactly match what the user entered.
+##
+## Returns information about the created save game file, or null if saving failed.
+func save_game(save_name_components: PackedStringArray, allow_overwrite: bool = false) -> SaveGameFile:
+	if not save_games_directory.is_absolute_path():
+		push_error("save_games_directory must be an absolute path: ", save_games_directory)
+		return null
+
+	var save_path := SaveGameFile.sanitize_save_name_components(save_name_components)
+	if not save_path:
+		push_error("After sanitization, save name components resulted in an empty filename: ", save_name_components)
+		return null
+	
+	var sanitized_save_name_components := save_path.split("/")
+	var absolute_path := save_games_directory.path_join(save_path + save_file_extension)
+	if not allow_overwrite and FileAccess.file_exists(absolute_path):
+		push_warning("Disallowing overwriting save file: ", absolute_path)
+		return null
+	
+	var error := DirAccess.make_dir_recursive_absolute(absolute_path.get_base_dir())
+	if error != OK:
+		push_error("Failed to create directory for save file: ", absolute_path, " (", error_string(error), ")")
+		return null
+	
+	error = save_scene_tree_to_disk(absolute_path)
+	if error != OK:
+		push_error("Failed to save scene tree to disk: ", absolute_path, " (", error_string(error), ")")
+		return null
+	
+	var save_game_file := SaveGameFile.new()
+	save_game_file.save_name_components = sanitized_save_name_components
+	save_game_file.absolute_path = absolute_path
+	save_game_file.modified_at_unix_time = FileAccess.get_modified_time(absolute_path)
+	return save_game_file
 
 func _before_load() -> Deserializer:
 	before_load.emit()
@@ -144,14 +190,98 @@ func load_scene_tree_from_memory(data: PackedByteArray) -> bool:
 ## Loads [member saveable_node_group] nodes into the scene tree from file at the given path. Returns an error if loading failed.
 ##
 ## Nodes will be added, removed, and updated as needed to match the provided save data.
-func load_scene_tree_from_file(path: String) -> Error:
+func load_scene_tree_from_file(absolute_path: String) -> Error:
 	var deserializer := _before_load()
-	var error := deserializer.prepare_load_from_file(path)
+	var error := deserializer.prepare_load_from_file(absolute_path)
 	if error != OK:
 		return error
 	
 	_load_scene_tree(deserializer)
 	return OK
+
+## Opens a save game file that matches [param save_name_components] within [member save_games_directory], and loads it into the scene tree. Returns an error if loading failed.
+func load_game(save_name_components: PackedStringArray) -> Error:
+	if not save_games_directory.is_absolute_path():
+		push_error("save_games_directory must be an absolute path: ", save_games_directory)
+		return ERR_INVALID_PARAMETER
+
+	var save_path := SaveGameFile.sanitize_save_name_components(save_name_components)
+	if not save_path:
+		push_error("After sanitization, save name components resulted in an empty filename: ", save_name_components)
+		return ERR_INVALID_PARAMETER
+	
+	var absolute_path := save_games_directory.path_join(save_path + save_file_extension)
+	return load_scene_tree_from_file(absolute_path)
+
+## Looks up a save game file by its absolute path, or returns null if the path doesn't point to a valid save game file. The path must be within [member save_games_directory].
+func get_save_file_at_path(path: String) -> SaveGameFile:
+	path = path.simplify_path()
+	if not path.begins_with(save_games_directory):
+		push_warning("Save file path must be within save_games_directory: ", path)
+		return null
+
+	if not FileAccess.file_exists(path):
+		return null
+	
+	var relative_path := path.substr(save_games_directory.length())
+	if not relative_path:
+		push_warning("Given save file path is the same as save_games_directory, expected a file within that directory: ", path)
+		return null
+	
+	var save_game_file := SaveGameFile.new()
+	save_game_file.save_name_components = relative_path.get_basename().split("/")
+	save_game_file.absolute_path = path
+	save_game_file.modified_at_unix_time = FileAccess.get_modified_time(path)
+	return save_game_file
+
+## Lists save game files that exist on disk.
+##
+## An optional [param directory_path] (which must be an absolute path) can be provided to limit the results to a specific subdirectory within [member save_games_directory]. By default, all save game files within [member save_games_directory] and its subdirectories will be listed.
+##
+## If [param recursive] is true, save game files within all subdirectories of [param directory_path] will be included.
+##
+## If [param sort_by_modified_time] is true, the resulting list will be sorted by modified time, with the most recently modified save games first. Otherwise, the order is not guaranteed.
+func list_save_files(directory_path: String = "", recursive: bool = true, sort_by_modified_time: bool = true) -> Array[SaveGameFile]:
+	if directory_path:
+		directory_path = directory_path.simplify_path()
+		if not directory_path.begins_with(save_games_directory):
+			push_warning("Directory path must be within save_games_directory: ", directory_path)
+			return []
+	else:
+		directory_path = save_games_directory
+	
+	var dir := DirAccess.open(directory_path)
+	if not dir:
+		push_warning("Could not list save games directory: ", directory_path, " (", error_string(DirAccess.get_open_error()), ")")
+		return []
+	
+	dir.include_hidden = false
+	dir.include_navigational = false
+	dir.list_dir_begin()
+
+	var file_name := dir.get_next()
+	var save_files: Array[SaveGameFile]
+
+	while file_name:
+		if dir.current_is_dir():
+			if recursive:
+				save_files.append_array(list_save_files(directory_path.path_join(file_name), true, false))
+		elif file_name.ends_with(save_file_extension):
+			var save_file := get_save_file_at_path(directory_path.path_join(file_name))
+			if save_file:
+				save_files.append(save_file)
+
+		file_name = dir.get_next()
+	
+	dir.list_dir_end()
+
+	if sort_by_modified_time:
+		save_files.sort_custom(func(a: SaveGameFile, b: SaveGameFile) -> bool:
+			# Sort most recent saves first
+			return a.modified_at_unix_time > b.modified_at_unix_time
+		)
+
+	return save_files
 
 func _on_node_created(node: Node) -> void:
 	node_created.emit(node)
