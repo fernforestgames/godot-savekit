@@ -16,6 +16,7 @@ func _parse_finalized(s: JSONSerializer) -> Dictionary:
 	return JSON.parse_string(s.finalize_save_in_memory().get_string_from_utf8())
 
 
+
 # =============================================================================
 # encode_var
 # =============================================================================
@@ -53,12 +54,15 @@ func test_encode_color() -> void:
 
 func test_encode_array() -> void:
 	var s := JSONSerializer.new()
-	assert_eq(s.encode_var([1, "two", 3.0]), JSON.from_native([1, "two", 3.0]))
+	var encoded: Variant = s.encode_var([1, "two", 3.0])
+	assert_true(encoded is Array, "Encoded array should be an Array")
+	assert_eq((encoded as Array).size(), 3, "Encoded array should have 3 elements")
 
 
 func test_encode_dictionary() -> void:
 	var s := JSONSerializer.new()
-	assert_eq(s.encode_var({"key": "value"}), JSON.from_native({"key": "value"}))
+	var encoded: Variant = s.encode_var({"key": "value"})
+	assert_true(encoded is Dictionary, "Encoded dictionary should be a Dictionary")
 
 
 func test_encode_null() -> void:
@@ -313,3 +317,100 @@ func test_save_resource_deduplicates() -> void:
 	var ref1: Dictionary = s.save_resource(resource)
 	var ref2: Dictionary = s.save_resource(resource)
 	assert_eq(ref1["res"], ref2["res"], "Same resource should produce the same ID")
+
+
+# =============================================================================
+# encode_var — nested objects in containers
+# =============================================================================
+
+func test_encode_node_in_array() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "Nested"
+	add_child_autofree(node)
+	var result: Array = s.encode_var([node])
+	assert_eq(result.size(), 1)
+	assert_not_null(result[0], "Node inside array should not be encoded as null")
+
+
+func test_encode_node_in_dictionary() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "Nested"
+	add_child_autofree(node)
+	var result: Dictionary = s.encode_var({"my_node": node})
+	assert_eq(result.size(), 1, "Encoded dict should have one entry")
+	for value: Variant in result.values():
+		assert_not_null(value, "Node inside dict should not be encoded as null")
+
+
+func test_encode_saveable_resource_in_array() -> void:
+	var s := JSONSerializer.new()
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Gem"
+	var result: Array = s.encode_var([resource])
+	assert_eq(result.size(), 1)
+	assert_not_null(result[0], "SaveableResource inside array should not be encoded as null")
+
+
+func test_encode_saveable_resource_in_dictionary() -> void:
+	var s := JSONSerializer.new()
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Gem"
+	var result: Dictionary = s.encode_var({"item": resource})
+	assert_eq(result.size(), 1, "Encoded dict should have one entry")
+	for value: Variant in result.values():
+		assert_not_null(value, "SaveableResource inside dict should not be encoded as null")
+
+
+func test_encode_resource_reference_in_array() -> void:
+	var s := JSONSerializer.new()
+	var script: Script = MockSaveable
+	var result: Array = s.encode_var([script])
+	assert_eq(result.size(), 1)
+	assert_not_null(result[0], "Resource inside array should not be encoded as null")
+
+
+func test_encode_resource_reference_in_dictionary() -> void:
+	var s := JSONSerializer.new()
+	var script: Script = MockSaveable
+	var result: Dictionary = s.encode_var({"script": script})
+	assert_eq(result.size(), 1, "Encoded dict should have one entry")
+	for value: Variant in result.values():
+		assert_not_null(value, "Resource inside dict should not be encoded as null")
+
+
+func test_encode_node_in_nested_containers() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "DeepNested"
+	add_child_autofree(node)
+	var result: Variant = s.encode_var({"list": [{"target": node}]})
+	assert_not_null(result, "Nested containers with a node should not encode as null")
+	var json_string := JSON.stringify(result, "", false)
+	assert_true(json_string.length() > 0, "Nested containers with a node should produce valid JSON")
+
+
+func test_encode_saveable_resource_in_nested_containers() -> void:
+	var s := JSONSerializer.new()
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Ring"
+	var result: Variant = s.encode_var([[{"item": resource}]])
+	assert_not_null(result, "Nested containers with a resource should not encode as null")
+	var json_string := JSON.stringify(result, "", false)
+	assert_true(json_string.length() > 0, "Nested containers with a resource should produce valid JSON")
+
+
+func test_encode_mixed_objects_in_array() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "MixNode"
+	add_child_autofree(node)
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Bow"
+	var script: Script = MockSaveable
+	var result: Array = s.encode_var([node, resource, script, 42, "plain"])
+	assert_eq(result.size(), 5, "Mixed array should preserve all elements")
+	assert_not_null(result[0], "Node in mixed array should not be encoded as null")
+	assert_not_null(result[1], "SaveableResource in mixed array should not be encoded as null")
+	assert_not_null(result[2], "Resource in mixed array should not be encoded as null")

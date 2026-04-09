@@ -101,7 +101,7 @@ func default_load_from_dict(node: Node, data: Dictionary, only_properties: Packe
 ## Finds a node at [param node_path] in the scene tree, or instantiates it from [param scene_file_path] and adds it to the scene tree if it did not already exist. Returns null if the node could not be found or instantiated.
 ##
 ## The node must be a member of [member saveable_node_group] to be found successfully.
-func find_or_instantiate_node(node_path: NodePath, scene_file_path: String) -> Node:
+func find_or_instantiate_node(node_path: NodePath, scene_file_path: String, fail_on_missing_group: bool = true) -> Node:
 	if not scene_tree:
 		push_error("scene_tree must be set on deserializer to find or instantiate nodes")
 		return null
@@ -130,7 +130,7 @@ func find_or_instantiate_node(node_path: NodePath, scene_file_path: String) -> N
 		node.add_to_group(saveable_node_group)
 		parent_node.add_child(node)
 		node_created.emit(node)
-	elif not node.is_in_group(saveable_node_group):
+	elif fail_on_missing_group and not node.is_in_group(saveable_node_group):
 		push_warning("Node ", node_path, " is not in group \"", saveable_node_group, "\", refusing to load it")
 		return null
 

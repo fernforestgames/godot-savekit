@@ -1,6 +1,19 @@
 extends "serializer.gd"
 ## Serializes save data into JSON format.
 
+## Passed to [method JSON.stringify], this controls if and how something is indented in the serialized JSON. This string will be used where there should be an indent in the output.
+##
+## For example, [code]"  "[/code] will indent with two spaces, and [code]"\t"[/code] will indent with tabs. Set to [code]""[/code] to not prettify at all.
+##
+## Enabling this is helpful for creating human-readable JSON.
+var indent: String = "\t"
+
+## Passed to [method JSON.stringify], this controls whether keys in serialized JSON dictionaries are sorted alphabetically. Enabling this can be helpful for creating human-readable JSON, but may have a performance cost.
+var sort_keys: bool = false
+
+## Passed to [method JSON.stringify], this controls whether floating-point numbers are stringified including all unreliable digits. Enabling this guarantees exact decoding of floats, but may increase the size of the JSON output.
+var full_precision: bool = false
+
 var _finalized: bool = false
 var _saved_nodes: Dictionary[NodePath, Dictionary]
 var _saved_resources_by_id: Dictionary[String, Dictionary]
@@ -13,6 +26,9 @@ const _RESOURCES_KEY := "resources"
 const _ENCODED_NODE_REFERENCE_KEY := "node"
 const _ENCODED_RESOURCE_REFERENCE_PATH_KEY := "path"
 const _ENCODED_RESOURCE_REFERENCE_UID_KEY := "uid"
+const _ENCODED_TYPED_VALUE_KEY := "v"
+const _ENCODED_TYPED_VALUE_TYPE_KEY := "t"
+const _ENCODED_TYPED_VALUE_CLASS_NAME_KEY := "c"
 
 const _SAVED_RESOURCE_ID_KEY := "res"
 const _SAVED_RESOURCE_SCRIPT_KEY := "script"
@@ -35,7 +51,7 @@ func finalize_save_in_memory() -> PackedByteArray:
 	if _saved_resources_by_id:
 		save_dict[_RESOURCES_KEY] = _saved_resources_by_id
 	
-	var json_string := JSON.stringify(save_dict, "\t", false)
+	var json_string := JSON.stringify(save_dict, indent, sort_keys, full_precision)
 	_finalized = true
 	return json_string.to_utf8_buffer()
 
@@ -56,8 +72,37 @@ func encode_var(value: Variant) -> Variant:
 				push_warning("Cannot serialize non-Resource, non-Node object: ", value)
 				return null
 		
+		TYPE_ARRAY:
+			var array: Array = value
+			return array.map(_encode_var_with_type_info)
+		
+		TYPE_DICTIONARY:
+			var dictionary: Dictionary = value
+			var encoded_dictionary: Dictionary[String, Variant]
+			for key: Variant in dictionary:
+				var encoded_key: Variant = _encode_var_with_type_info(key)
+				var encoded_value: Variant = _encode_var_with_type_info(dictionary[key])
+
+				# JSON keys must be strings, so (wastefully) recursively encode them.
+				# The alternative would be to encode all object types into strings all of the time, which is wasteful in a different way.
+				var stringified_key := JSON.stringify(encoded_key, "", false)
+				encoded_dictionary[stringified_key] = encoded_value
+			
+			return encoded_dictionary
+		
 		_:
 			return JSON.from_native(value)
+
+func _encode_var_with_type_info(value: Variant) -> Variant:
+	var encoded := {
+		_ENCODED_TYPED_VALUE_KEY: encode_var(value),
+		_ENCODED_TYPED_VALUE_TYPE_KEY: typeof(value),
+	}
+
+	if value is Object:
+		encoded[_ENCODED_TYPED_VALUE_CLASS_NAME_KEY] = (value as Object).get_class()
+	
+	return encoded
 
 ## Encodes a reference to a resource that can be loaded from the [code]res://[/code] filesystem later.
 ##
