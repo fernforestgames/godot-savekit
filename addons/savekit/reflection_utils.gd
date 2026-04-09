@@ -34,13 +34,10 @@ static func get_storable_non_default_properties(obj: Object) -> Array[Dictionary
 
 	return non_default_properties
 
-## Populates [param r_default_property_values] with the default values for all properties defined in [param script], including properties inherited from base scripts if [param include_ancestors] is true.
-static func get_script_default_property_values(script: Script, r_default_property_values: Dictionary[String, Variant], include_ancestors: bool = true) -> void:
+## Populates [param r_default_property_values] with the default values for all properties defined in [param script], including properties inherited from base scripts.
+static func get_script_default_property_values(script: Script, r_default_property_values: Dictionary[String, Variant]) -> void:
 	if not script:
 		return
-
-	if include_ancestors:
-		get_script_default_property_values(script.get_base_script(), r_default_property_values, include_ancestors)
 
 	for property in script.get_script_property_list():
 		var name: String = property["name"]
