@@ -40,6 +40,12 @@ enum {
 	_SAVED_RESOURCE_REFERENCE_SIZE = 9,
 }
 
+enum {
+	_ENCODED_TYPED_VALUE_TYPE_U8_OFFSET = 0,
+	_ENCODED_TYPED_VALUE_CLASS_NAME_LENGTH_U16_OFFSET = 1,
+	_ENCODED_TYPED_VALUE_DATA_OFFSET = 3,
+}
+
 const _NODE_SCENE_FILE_PATH_KEY := 0xF17E
 const _SAVED_RESOURCE_SCRIPT_KEY := 0xC0DE
 
@@ -70,20 +76,33 @@ func encode_var(value: Variant) -> Variant:
 		
 		TYPE_ARRAY:
 			var array: Array = value
-			return array.map(encode_var)
+			return array.map(_encode_var_with_type_info)
 		
 		TYPE_DICTIONARY:
 			var dictionary: Dictionary = value
 			var encoded_dictionary: Dictionary
 			for key: Variant in dictionary:
-				var encoded_key: Variant = encode_var(key)
-				var encoded_value: Variant = encode_var(dictionary[key])
+				var encoded_key: Variant = _encode_var_with_type_info(key)
+				var encoded_value: Variant = _encode_var_with_type_info(dictionary[key])
 				encoded_dictionary[encoded_key] = encoded_value
 			
 			return encoded_dictionary
 		
 		_:
 			return value
+
+func _encode_var_with_type_info(value: Variant) -> Variant:
+	var buffer: PackedByteArray
+	buffer.resize(_ENCODED_TYPED_VALUE_DATA_OFFSET)
+	buffer.encode_u8(_ENCODED_TYPED_VALUE_TYPE_U8_OFFSET, typeof(value))
+
+	if value is Object:
+		var classname_buffer := (value as Object).get_class().to_utf8_buffer()
+		buffer.encode_u16(_ENCODED_TYPED_VALUE_CLASS_NAME_LENGTH_U16_OFFSET, classname_buffer.size())
+		buffer.append_array(classname_buffer)
+	
+	buffer.append_array(var_to_bytes(encode_var(value)))
+	return buffer
 
 func save_node(node: Node) -> void:
 	var node_path := save_path_for_node(node)

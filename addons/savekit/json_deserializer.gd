@@ -79,7 +79,7 @@ func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name
 				push_warning("Expected a dictionary when deserializing a dictionary, got: ", value)
 				return null
 			
-			var decoded_dictionary: Dictionary[Variant, Variant]
+			var decoded_dictionary: Dictionary
 			for key: String in dictionary:
 				var parsed_key: Variant = JSON.parse_string(key)
 				var decoded_key: Variant = _decode_var_with_type_info(parsed_key)
