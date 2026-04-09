@@ -1,6 +1,19 @@
 extends "serializer.gd"
 ## Serializes save data into JSON format.
 
+## Passed to [method JSON.stringify], this controls if and how something is indented in the serialized JSON. This string will be used where there should be an indent in the output.
+##
+## For example, [code]"  "[/code] will indent with two spaces, and [code]"\t"[/code] will indent with tabs. Set to [code]""[/code] to not prettify at all.
+##
+## Enabling this is helpful for creating human-readable JSON.
+var indent: String = "\t"
+
+## Passed to [method JSON.stringify], this controls whether keys in serialized JSON dictionaries are sorted alphabetically. Enabling this can be helpful for creating human-readable JSON, but may have a performance cost.
+var sort_keys: bool = false
+
+## Passed to [method JSON.stringify], this controls whether floating-point numbers are stringified including all unreliable digits. Enabling this guarantees exact decoding of floats, but may increase the size of the JSON output.
+var full_precision: bool = false
+
 var _finalized: bool = false
 var _saved_nodes: Dictionary[NodePath, Dictionary]
 var _saved_resources_by_id: Dictionary[String, Dictionary]
@@ -38,7 +51,7 @@ func finalize_save_in_memory() -> PackedByteArray:
 	if _saved_resources_by_id:
 		save_dict[_RESOURCES_KEY] = _saved_resources_by_id
 	
-	var json_string := JSON.stringify(save_dict, "\t", false)
+	var json_string := JSON.stringify(save_dict, indent, sort_keys, full_precision)
 	_finalized = true
 	return json_string.to_utf8_buffer()
 
