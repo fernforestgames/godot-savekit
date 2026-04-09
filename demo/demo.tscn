@@ -115,7 +115,7 @@ anchor_right = 1.0
 offset_top = 10.0
 offset_bottom = 40.0
 grow_horizontal = 2
-text = "Drag the colored boxes with your mouse. Balls bounce around the screen."
+text = "Drag the colored boxes with your mouse (each tracks its click count). Balls bounce around the screen."
 horizontal_alignment = 1
 
 [node name="NotesPanel" type="PanelContainer" parent="UILayer" unique_id=909757285]
