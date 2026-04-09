@@ -410,13 +410,28 @@ func test_load_resource_missing_id() -> void:
 # decode_var — nested objects in containers
 # =============================================================================
 
+func _round_trip_encode(serializer: JSONSerializer, value: Variant) -> Variant:
+	var encoded: Variant = serializer.encode_var(value)
+	var json_string := JSON.stringify(encoded, "", false)
+	return JSON.parse_string(json_string)
+
+
+func _round_trip_deserializer(serializer: JSONSerializer) -> JSONDeserializer:
+	var save_data := serializer.finalize_save_in_memory()
+	var d := JSONDeserializer.new()
+	d.prepare_load_from_memory(save_data)
+	d.scene_tree = get_tree()
+	return d
+
+
 func test_decode_node_reference_in_array() -> void:
 	var node := Node.new()
 	node.name = "Nested"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-	var d := _make_deserializer()
-	var encoded: Variant = JSON.from_native([{"node": str(node.get_path())}])
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, [node])
+	var d := _round_trip_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded.size(), 1)
 	assert_eq(decoded[0], node, "Node reference inside array should be decoded back to the node")
@@ -427,26 +442,21 @@ func test_decode_node_reference_in_dictionary() -> void:
 	node.name = "Nested"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-	var d := _make_deserializer()
-	var encoded: Variant = JSON.from_native({"my_node": {"node": str(node.get_path())}})
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, {"my_node": node})
+	var d := _round_trip_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	assert_has(decoded, "my_node")
 	assert_eq(decoded["my_node"], node, "Node reference inside dict should be decoded back to the node")
 
 
 func test_decode_saveable_resource_in_array() -> void:
-	var serializer := JSONSerializer.new()
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Gem"
 	resource.quantity = 3
-	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save_in_memory()
-
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(save_data)
-	d.scene_tree = get_tree()
-	# Encode the array as it would appear in the JSON: [{res: id}]
-	var encoded: Variant = JSON.from_native([ref])
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, [resource])
+	var d := _round_trip_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded.size(), 1)
 	assert_not_null(decoded[0], "SaveableResource inside array should be decoded")
@@ -455,17 +465,12 @@ func test_decode_saveable_resource_in_array() -> void:
 
 
 func test_decode_saveable_resource_in_dictionary() -> void:
-	var serializer := JSONSerializer.new()
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Gem"
 	resource.quantity = 3
-	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save_in_memory()
-
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(save_data)
-	d.scene_tree = get_tree()
-	var encoded: Variant = JSON.from_native({"item": ref})
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, {"item": resource})
+	var d := _round_trip_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	assert_has(decoded, "item")
 	assert_not_null(decoded["item"], "SaveableResource inside dict should be decoded")
@@ -473,16 +478,20 @@ func test_decode_saveable_resource_in_dictionary() -> void:
 
 
 func test_decode_resource_reference_in_array() -> void:
-	var d := _make_deserializer()
-	var encoded: Variant = JSON.from_native([{"path": "res://tests/fixtures/mock_saveable.gd"}])
+	var script: Script = MockSaveable
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, [script])
+	var d := _round_trip_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded.size(), 1)
 	assert_not_null(decoded[0], "Resource reference inside array should be decoded to a resource")
 
 
 func test_decode_resource_reference_in_dictionary() -> void:
-	var d := _make_deserializer()
-	var encoded: Variant = JSON.from_native({"script": {"path": "res://tests/fixtures/mock_saveable.gd"}})
+	var script: Script = MockSaveable
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, {"script": script})
+	var d := _round_trip_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	assert_has(decoded, "script")
 	assert_not_null(decoded["script"], "Resource reference inside dict should be decoded to a resource")
@@ -493,8 +502,9 @@ func test_decode_node_in_nested_containers() -> void:
 	node.name = "DeepNested"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-	var d := _make_deserializer()
-	var encoded: Variant = JSON.from_native({"list": [{"target": {"node": str(node.get_path())}}]})
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, {"list": [{"target": node}]})
+	var d := _round_trip_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	var inner_list: Array = decoded["list"]
 	var inner_dict: Dictionary = inner_list[0]
@@ -502,16 +512,11 @@ func test_decode_node_in_nested_containers() -> void:
 
 
 func test_decode_saveable_resource_in_nested_containers() -> void:
-	var serializer := JSONSerializer.new()
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Ring"
-	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save_in_memory()
-
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(save_data)
-	d.scene_tree = get_tree()
-	var encoded: Variant = JSON.from_native([[{"item": ref}]])
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, [[{"item": resource}]])
+	var d := _round_trip_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	var inner_array: Array = decoded[0]
 	var inner_dict: Dictionary = inner_array[0]
@@ -524,23 +529,12 @@ func test_decode_mixed_objects_in_array() -> void:
 	node.name = "MixNode"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-
-	var serializer := JSONSerializer.new()
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Bow"
-	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save_in_memory()
-
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(save_data)
-	d.scene_tree = get_tree()
-	var encoded: Variant = JSON.from_native([
-		{"node": str(node.get_path())},
-		ref,
-		{"path": "res://tests/fixtures/mock_saveable.gd"},
-		42,
-		"plain",
-	])
+	var script: Script = MockSaveable
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, [node, resource, script, 42, "plain"])
+	var d := _round_trip_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded[0], node, "Node in mixed array should be decoded")
 	assert_not_null(decoded[1], "SaveableResource in mixed array should be decoded")
