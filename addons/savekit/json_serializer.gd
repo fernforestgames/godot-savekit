@@ -40,7 +40,7 @@ func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_PREDELETE:
 			if not _finalized and (_saved_nodes or _saved_resources_by_id):
-				push_warning("finalize_save() was not called on JSON serializer before it was freed. Data is not actually being saved!")
+				push_warning("JSON serializer was not finalized before it was freed. Data is not actually being saved!")
 
 func finalize_save_in_memory() -> PackedByteArray:
 	var save_dict := {
