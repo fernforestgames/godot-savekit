@@ -65,8 +65,42 @@ func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name
 			push_warning("Cannot deserialize object from dictionary: ", value_dict)
 			return null
 		
+		TYPE_ARRAY:
+			var array := value as Array
+			if not array:
+				push_warning("Expected an array when deserializing an array, got: ", value)
+				return null
+			
+			return array.map(_decode_var_with_type_info)
+		
+		TYPE_DICTIONARY:
+			var dictionary := value as Dictionary
+			if not dictionary:
+				push_warning("Expected a dictionary when deserializing a dictionary, got: ", value)
+				return null
+			
+			var decoded_dictionary: Dictionary[Variant, Variant]
+			for key: String in dictionary:
+				var parsed_key: Variant = JSON.parse_string(key)
+				var decoded_key: Variant = _decode_var_with_type_info(parsed_key)
+				var decoded_value: Variant = _decode_var_with_type_info(dictionary[key])
+				decoded_dictionary[decoded_key] = decoded_value
+			
+			return decoded_dictionary
+		
 		_:
 			return JSON.to_native(value)
+
+func _decode_var_with_type_info(value: Variant) -> Variant:
+	var value_dict := value as Dictionary
+	if not value_dict:
+		push_warning("Expected a dictionary when decoding a typed value, got: ", value)
+		return null
+	
+	var type: Variant.Type = value_dict.get(JSONSerializer._ENCODED_TYPED_VALUE_TYPE_KEY, TYPE_NIL)
+	var classname: StringName = value_dict.get(JSONSerializer._ENCODED_TYPED_VALUE_CLASS_NAME_KEY, &"")
+	var encoded_value: Variant = value_dict.get(JSONSerializer._ENCODED_TYPED_VALUE_KEY, null)
+	return decode_var(encoded_value, type, classname)
 
 ## Decodes a reference to a node expected in the scene tree at the given path.
 ##
