@@ -115,7 +115,7 @@ func decode_node_reference(node_path: NodePath) -> Node:
 	
 	var save_dict: Dictionary = _saved_nodes.get(node_path, {})
 	var scene_file_path: String = save_dict.get(JSONSerializer._NODE_SCENE_FILE_PATH_KEY, "")
-	return find_or_instantiate_node(node_path, scene_file_path)
+	return find_or_instantiate_node(node_path, scene_file_path, false)
 
 ## Decodes a reference to a resource, loading it by UID or path as appropriate.
 ##
@@ -147,7 +147,7 @@ func load_node() -> Node:
 	var scene_file_path: String = save_dict.get(JSONSerializer._NODE_SCENE_FILE_PATH_KEY, "")
 	save_dict.erase(JSONSerializer._NODE_SCENE_FILE_PATH_KEY)
 
-	var node := find_or_instantiate_node(node_path, scene_file_path)
+	var node := find_or_instantiate_node(node_path, scene_file_path, true)
 	if node:
 		load_node_from_dict(node, save_dict)
 
