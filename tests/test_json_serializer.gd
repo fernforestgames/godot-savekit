@@ -313,3 +313,101 @@ func test_save_resource_deduplicates() -> void:
 	var ref1: Dictionary = s.save_resource(resource)
 	var ref2: Dictionary = s.save_resource(resource)
 	assert_eq(ref1["res"], ref2["res"], "Same resource should produce the same ID")
+
+
+# =============================================================================
+# encode_var — nested objects in containers
+# =============================================================================
+
+func test_encode_node_in_array() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "Nested"
+	add_child_autofree(node)
+	var result: Array = s.encode_var([node])
+	assert_eq(result.size(), 1)
+	assert_has(result[0] as Dictionary, "node", "Node inside array should be encoded as a node reference")
+	assert_eq((result[0] as Dictionary)["node"], str(node.get_path()))
+
+
+func test_encode_node_in_dictionary() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "Nested"
+	add_child_autofree(node)
+	var result: Dictionary = s.encode_var({"my_node": node})
+	assert_has(result, "my_node")
+	assert_has(result["my_node"] as Dictionary, "node", "Node inside dict should be encoded as a node reference")
+	assert_eq((result["my_node"] as Dictionary)["node"], str(node.get_path()))
+
+
+func test_encode_saveable_resource_in_array() -> void:
+	var s := JSONSerializer.new()
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Gem"
+	var result: Array = s.encode_var([resource])
+	assert_eq(result.size(), 1)
+	assert_has(result[0] as Dictionary, "res", "SaveableResource inside array should be encoded as a resource reference")
+
+
+func test_encode_saveable_resource_in_dictionary() -> void:
+	var s := JSONSerializer.new()
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Gem"
+	var result: Dictionary = s.encode_var({"item": resource})
+	assert_has(result, "item")
+	assert_has(result["item"] as Dictionary, "res", "SaveableResource inside dict should be encoded as a resource reference")
+
+
+func test_encode_resource_reference_in_array() -> void:
+	var s := JSONSerializer.new()
+	var script: Script = MockSaveable
+	var result: Array = s.encode_var([script])
+	assert_eq(result.size(), 1)
+	assert_has(result[0] as Dictionary, "path", "Resource inside array should be encoded as a resource reference")
+
+
+func test_encode_resource_reference_in_dictionary() -> void:
+	var s := JSONSerializer.new()
+	var script: Script = MockSaveable
+	var result: Dictionary = s.encode_var({"script": script})
+	assert_has(result, "script")
+	assert_has(result["script"] as Dictionary, "path", "Resource inside dict should be encoded as a resource reference")
+
+
+func test_encode_node_in_nested_containers() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "DeepNested"
+	add_child_autofree(node)
+	var result: Dictionary = s.encode_var({"list": [{"target": node}]})
+	var inner_list: Array = result["list"]
+	var inner_dict: Dictionary = inner_list[0]
+	assert_has(inner_dict["target"] as Dictionary, "node", "Node deeply nested in dict>array>dict should be encoded as a node reference")
+	assert_eq((inner_dict["target"] as Dictionary)["node"], str(node.get_path()))
+
+
+func test_encode_saveable_resource_in_nested_containers() -> void:
+	var s := JSONSerializer.new()
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Ring"
+	var result: Array = s.encode_var([[{"item": resource}]])
+	var inner_array: Array = result[0]
+	var inner_dict: Dictionary = inner_array[0]
+	assert_has(inner_dict["item"] as Dictionary, "res", "SaveableResource deeply nested in array>array>dict should be encoded as a resource reference")
+
+
+func test_encode_mixed_objects_in_array() -> void:
+	var s := JSONSerializer.new()
+	var node := Node.new()
+	node.name = "MixNode"
+	add_child_autofree(node)
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Bow"
+	var script: Script = MockSaveable
+	var result: Array = s.encode_var([node, resource, script, 42, "plain"])
+	assert_has(result[0] as Dictionary, "node", "Node in mixed array")
+	assert_has(result[1] as Dictionary, "res", "SaveableResource in mixed array")
+	assert_has(result[2] as Dictionary, "path", "Resource in mixed array")
+	assert_eq(result[3], JSON.from_native(42))
+	assert_eq(result[4], JSON.from_native("plain"))
