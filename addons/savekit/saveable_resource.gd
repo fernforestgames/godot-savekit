@@ -24,7 +24,7 @@ func save_to_dict(s: Serializer) -> Dictionary:
 	ReflectionUtils.get_script_default_property_values(script, script_property_default_values)
 	
 	var save_dict := {}
-	for property in get_property_list():
+	for property in script.get_script_property_list():
 		var name: String = property["name"]
 		var usage: PropertyUsageFlags = property["usage"]
 		if usage & PROPERTY_USAGE_STORAGE == 0:
