@@ -86,9 +86,8 @@ func _encode_var_with_type_info(value: Variant) -> Variant:
 		_ENCODED_TYPED_VALUE_TYPE_KEY: typeof(value),
 	}
 
-	var obj := value as Object
-	if obj:
-		encoded[_ENCODED_TYPED_VALUE_CLASS_NAME_KEY] = obj.get_class()
+	if value is Object:
+		encoded[_ENCODED_TYPED_VALUE_CLASS_NAME_KEY] = (value as Object).get_class()
 	
 	return encoded
 
