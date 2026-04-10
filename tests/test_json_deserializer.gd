@@ -107,18 +107,12 @@ func test_decode_resource_reference() -> void:
 
 
 # =============================================================================
-# decode_resource_reference
+# decode_var — resource reference error paths
 # =============================================================================
-
-func test_decode_resource_reference_by_path() -> void:
-	var d := _make_deserializer()
-	var decoded := d.decode_resource_reference("res://tests/fixtures/mock_saveable.gd", "", &"Script")
-	assert_not_null(decoded)
-
 
 func test_decode_resource_reference_invalid_path() -> void:
 	var d := _make_deserializer()
-	var decoded := d.decode_resource_reference("user://bad/path.gd")
+	var decoded: Variant = d.decode_var({"path": "user://bad/path.gd"}, TYPE_OBJECT, &"Script")
 	assert_null(decoded)
 
 
@@ -364,44 +358,25 @@ func test_instantiate_requires_scene_tree() -> void:
 
 
 # =============================================================================
-# load_resource
+# decode_var — saveable resource error & dedup paths
 # =============================================================================
 
-func test_load_resource_round_trip() -> void:
-	var serializer := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
-	resource.item_name = "Potion"
-	resource.quantity = 5
-	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save_in_memory()
-
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(save_data)
-	d.scene_tree = get_tree()
-	var loaded: SaveableResource = d.load_resource(ref["res"])
-	assert_not_null(loaded)
-	assert_eq(loaded.get("item_name"), "Potion")
-	assert_eq(loaded.get("quantity"), 5)
-
-
-func test_load_resource_deduplicates() -> void:
-	var serializer := JSONSerializer.new()
+func test_decode_saveable_resource_deduplicates() -> void:
+	var s := JSONSerializer.new()
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Shield"
-	var ref: Dictionary = serializer.save_resource(resource)
-	var save_data := serializer.finalize_save_in_memory()
-
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(save_data)
-	d.scene_tree = get_tree()
-	var loaded1 := d.load_resource(ref["res"])
-	var loaded2 := d.load_resource(ref["res"])
+	# Encode the same resource twice; both refs should resolve to one instance.
+	var encoded1: Variant = s.encode_var(resource)
+	var encoded2: Variant = s.encode_var(resource)
+	var d := _round_trip_deserializer(s)
+	var loaded1: Variant = d.decode_var(encoded1, TYPE_OBJECT, &"SaveableResource")
+	var loaded2: Variant = d.decode_var(encoded2, TYPE_OBJECT, &"SaveableResource")
 	assert_eq(loaded1, loaded2, "Same resource instance should be returned")
 
 
-func test_load_resource_missing_id() -> void:
+func test_decode_saveable_resource_missing_id() -> void:
 	var d := _make_deserializer()
-	var loaded := d.load_resource("nonexistent_id")
+	var loaded: Variant = d.decode_var({"res": "nonexistent_id"}, TYPE_OBJECT, &"SaveableResource")
 	assert_null(loaded)
 	assert_push_error("No saved resource found with ID")
 
