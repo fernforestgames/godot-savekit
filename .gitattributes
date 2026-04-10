@@ -2,6 +2,6 @@
 * text=auto eol=lf
 
 # Only include addons/savekit when downloading from the Asset Library.
-/**             export-ignore
-/addons         !export-ignore
-/addons/savekit !export-ignore
+/**                 export-ignore
+/addons             !export-ignore
+/addons/savekit/**  !export-ignore
