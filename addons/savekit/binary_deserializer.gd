@@ -83,8 +83,7 @@ func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name
 			return decoded_dictionary
 		
 		_:
-			push_warning("Deserialization of type ", type_string(expected_type), " is not yet implemented")
-			return null
+			return value
 
 func _decode_var_with_type_info(value: Variant) -> Variant:
 	var buffer := value as PackedByteArray
