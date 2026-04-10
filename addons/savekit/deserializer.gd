@@ -135,3 +135,10 @@ func find_or_instantiate_node(node_path: NodePath, scene_file_path: String, fail
 		return null
 
 	return node
+
+func sort_node_paths_in_load_order(r_node_paths: Array[NodePath]) -> void:
+	# Load nodes in order of depth, to ensure parents are loaded before children.
+	# We'll use this to instantiate any missing nodes along the way.
+	r_node_paths.sort_custom(func(a: NodePath, b: NodePath) -> bool:
+		# We're creating a stack, so sort nodes to load FIRST at the end
+		return a.get_name_count() > b.get_name_count())

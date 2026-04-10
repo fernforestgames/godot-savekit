@@ -2,16 +2,13 @@ extends "serializer.gd"
 ## Serializes save data into a binary format.
 
 var _finalized: bool = false
-var _saved_nodes_buffer: PackedByteArray
-var _saved_resource_ids: PackedInt64Array
-var _saved_resources_buffer: PackedByteArray
+var _saved_nodes: Dictionary[NodePath, Dictionary]
+var _saved_resources_by_id: Dictionary[int, Dictionary]
 
 # File header layout
 enum {
 	_SERIALIZATION_VERSION_U32_OFFSET = 0,
-	_SAVED_NODES_LENGTH_U64_OFFSET = 4,
-	_SAVED_RESOURCES_LENGTH_U64_OFFSET = 12,
-	_FILE_HEADER_SIZE = 20,
+	_FILE_HEADER_SIZE = 4,
 }
 
 # u8 tags, used to differentiate types of Object
@@ -54,7 +51,7 @@ const _SERIALIZATION_VERSION: int = 1
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_PREDELETE:
-			if not _finalized and (_saved_nodes_buffer or _saved_resources_buffer):
+			if not _finalized and (_saved_nodes or _saved_resources_by_id):
 				push_warning("Binary serializer was not finalized before it was freed. Data is not actually being saved!")
 
 func encode_var(value: Variant) -> Variant:
@@ -112,17 +109,14 @@ func save_node(node: Node) -> void:
 		save_dict[_NODE_SCENE_FILE_PATH_KEY] = node.scene_file_path
 	# TODO: else, save script reference for programmatic instantiation?
 
-	_saved_nodes_buffer.append_array(var_to_bytes(node_path))
-	_saved_nodes_buffer.append_array(var_to_bytes(save_dict))
+	_saved_nodes[node_path] = save_dict
 
 func finalize_save_in_memory() -> PackedByteArray:
 	var buffer: PackedByteArray
 	buffer.resize(_FILE_HEADER_SIZE)
 	buffer.encode_u32(_SERIALIZATION_VERSION_U32_OFFSET, _SERIALIZATION_VERSION)
-	buffer.encode_u64(_SAVED_NODES_LENGTH_U64_OFFSET, _saved_nodes_buffer.size())
-	buffer.encode_u64(_SAVED_RESOURCES_LENGTH_U64_OFFSET, _saved_resources_buffer.size())
-	buffer.append_array(_saved_nodes_buffer)
-	buffer.append_array(_saved_resources_buffer)
+	buffer.append_array(var_to_bytes(_saved_nodes))
+	buffer.append_array(var_to_bytes(_saved_resources_by_id))
 	_finalized = true
 	return buffer
 
@@ -172,16 +166,15 @@ func encode_node_reference(node: Node) -> Variant:
 ## If [param resource] has already been saved, it will not be saved again; instead, a reference to the previously saved data will be returned.
 func save_resource(resource: SaveableResource) -> Variant:
 	var instance_id := resource.get_instance_id()
-	if instance_id not in _saved_resource_ids:
+	if instance_id not in _saved_resources_by_id:
 		# Register before encoding, to avoid infinite recursion in case of circular references
-		_saved_resource_ids.append(instance_id)
+		_saved_resources_by_id[instance_id] = {}
 
 		var save_dict := resource.save_to_dict(self )
 		var script: Script = resource.get_script()
 		save_dict[_SAVED_RESOURCE_SCRIPT_KEY] = encode_resource_reference(script)
 
-		_saved_resources_buffer.append_array(var_to_bytes(instance_id))
-		_saved_resources_buffer.append_array(var_to_bytes(save_dict))
+		_saved_resources_by_id[instance_id] = save_dict
 	
 	var buffer: PackedByteArray
 	buffer.resize(_SAVED_RESOURCE_REFERENCE_SIZE)

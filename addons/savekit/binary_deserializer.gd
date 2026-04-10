@@ -3,8 +3,10 @@ extends "deserializer.gd"
 
 const BinarySerializer := preload("binary_serializer.gd")
 
-var _saved_nodes_buffer: PackedByteArray
-var _saved_resources: Dictionary[int, Dictionary]
+var _node_deserialization_stack: Array[NodePath] = []
+var _saved_nodes: Dictionary[NodePath, Dictionary]
+var _saved_resources_by_id: Dictionary[int, Dictionary]
+var _loaded_resources_by_id: Dictionary[int, SaveableResource]
 
 func prepare_load_from_memory(data: PackedByteArray) -> bool:
 	if data.size() < BinarySerializer._FILE_HEADER_SIZE:
@@ -16,35 +18,13 @@ func prepare_load_from_memory(data: PackedByteArray) -> bool:
 		push_error("Unsupported save data version: ", version)
 		return false
 	
-	var saved_nodes_length := data.decode_u64(BinarySerializer._SAVED_NODES_LENGTH_U64_OFFSET)
-	_saved_nodes_buffer = data.slice(BinarySerializer._FILE_HEADER_SIZE, BinarySerializer._FILE_HEADER_SIZE + saved_nodes_length)
+	var saved_nodes_length := data.decode_var_size(BinarySerializer._FILE_HEADER_SIZE)
+	_saved_nodes.assign(data.decode_var(BinarySerializer._FILE_HEADER_SIZE) as Dictionary)
+	_saved_resources_by_id.assign(data.decode_var(BinarySerializer._FILE_HEADER_SIZE + saved_nodes_length) as Dictionary)
 
-	var saved_resources_length := data.decode_u64(BinarySerializer._SAVED_RESOURCES_LENGTH_U64_OFFSET)
-	var saved_resources_buffer := data.slice(BinarySerializer._FILE_HEADER_SIZE + saved_nodes_length, BinarySerializer._FILE_HEADER_SIZE + saved_nodes_length + saved_resources_length)
-	_decode_saved_resources(saved_resources_buffer)
-	
+	_node_deserialization_stack.assign(_saved_nodes.keys())
+	sort_node_paths_in_load_order(_node_deserialization_stack)
 	return true
-
-func _decode_saved_resources(buffer: PackedByteArray) -> void:
-	var offset: int = 0
-	while offset < buffer.size():
-		var resource_id_size := buffer.decode_var_size(offset)
-		if resource_id_size <= 0:
-			push_error("Failed to decode saved resource ID at offset ", offset)
-			return
-
-		var resource_id: int = buffer.decode_var(offset)
-		offset += resource_id_size
-
-		var save_dict_size := buffer.decode_var_size(offset)
-		if save_dict_size <= 0:
-			push_error("Failed to decode saved data size for resource ID ", resource_id, " at offset ", offset)
-			return
-		
-		var save_dict: Dictionary = buffer.decode_var(offset)
-		offset += save_dict_size
-
-		_saved_resources[resource_id] = save_dict
 
 func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name: StringName = &"") -> Variant:
 	match expected_type:
@@ -64,10 +44,17 @@ func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name
 					return _decode_resource_reference(buffer, expected_class_name)
 				
 				BinarySerializer._ENCODED_NODE_REFERENCE_TAG:
-					pass
+					var path_length := buffer.decode_u32(BinarySerializer._ENCODED_NODE_REFERENCE_PATH_LENGTH_U32_OFFSET)
+					if path_length <= 0:
+						push_warning("Invalid path length ", path_length, " found when deserializing a node reference")
+						return null
+					
+					var path_buffer := buffer.slice(BinarySerializer._ENCODED_NODE_REFERENCE_DATA_OFFSET, BinarySerializer._ENCODED_NODE_REFERENCE_DATA_OFFSET + path_length)
+					var node_path := NodePath(path_buffer.get_string_from_utf8())
+					return _decode_node_reference(node_path)
 				
-				BinarySerializer._SAVED_RESOURCE_TAG:
-					pass
+				BinarySerializer._SAVED_RESOURCE_REFERENCE_TAG:
+					return _load_resource(buffer)
 				
 				_:
 					push_warning("Unknown type tag ", type_tag, " found when deserializing an object")
@@ -116,17 +103,21 @@ func _decode_var_with_type_info(value: Variant) -> Variant:
 	var encoded_value := buffer.slice(BinarySerializer._ENCODED_TYPED_VALUE_DATA_OFFSET + classname_length)
 	return decode_var(bytes_to_var(encoded_value), type, classname)
 
-func decode_node_reference(node_path: NodePath) -> Node:
+func _decode_node_reference(node_path: NodePath) -> Node:
 	# To ensure we can convert this node path into a valid node reference, we need to effectively "preload" the target node and all of its ancestors.
 	# This process is similar to load_node(), but circumventing the normal order and without actually loading data into the nodes yet.
 	if node_path.get_name_count() > 1:
-		var parent_node := decode_node_reference(node_path.slice(0, -1))
+		var parent_node := _decode_node_reference(node_path.slice(0, -1))
 		if not parent_node:
 			return null
-	
-	# TODO: Iterate _saved_nodes_buffer
-	return null
 
+	var save_dict: Dictionary = _saved_nodes.get(node_path, {})
+	var scene_file_path: String = save_dict.get(BinarySerializer._NODE_SCENE_FILE_PATH_KEY, "")
+	return find_or_instantiate_node(node_path, scene_file_path, false)
+
+## Decodes a reference to a resource, loading it by UID or path as appropriate.
+##
+## Note: [param expected_class_name] should refer to a class that exists within [ClassDB] (i.e., built-in or GDExtension classes). It should [i]not[/i] contain the name of a script-defined [code]class_name[/code].
 func _decode_resource_reference(buffer: PackedByteArray, expected_class_name: StringName) -> Resource:
 	var path_length := buffer.decode_u32(BinarySerializer._ENCODED_RESOURCE_REFERENCE_PATH_LENGTH_U32_OFFSET)
 	var uid_length := buffer.decode_u32(BinarySerializer._ENCODED_RESOURCE_REFERENCE_UID_LENGTH_U32_OFFSET)
@@ -146,8 +137,53 @@ func _decode_resource_reference(buffer: PackedByteArray, expected_class_name: St
 	var allowed_extensions := ResourceLoader.get_recognized_extensions_for_type(expected_class_name if expected_class_name else &"Resource")
 	return ResourceUtils.safe_load_resource(resource_path, allowed_extensions)
 
+## Returns how many nodes remain to be loaded from the save data. This can be used to determine loading progress.
+func get_remaining_node_count() -> int:
+	return _node_deserialization_stack.size()
+
 func is_finished() -> bool:
-	return not _saved_nodes_buffer
+	return not _node_deserialization_stack
 
 func load_node() -> Node:
-	return null
+	var node_path: NodePath = _node_deserialization_stack.pop_back()
+	if not node_path:
+		return null
+	
+	var save_dict: Dictionary = _saved_nodes[node_path]
+	_saved_nodes.erase(node_path)
+
+	var scene_file_path: String = save_dict.get(BinarySerializer._NODE_SCENE_FILE_PATH_KEY, "")
+	save_dict.erase(BinarySerializer._NODE_SCENE_FILE_PATH_KEY)
+
+	var node := find_or_instantiate_node(node_path, scene_file_path, true)
+	if node:
+		load_node_from_dict(node, save_dict)
+
+	return node
+
+## Loads a [SaveableResource] from the save data. If the resource has already been loaded, the existing instance will be returned.
+func _load_resource(buffer: PackedByteArray) -> SaveableResource:
+	var resource_id := buffer.decode_u64(BinarySerializer._SAVED_RESOURCE_REFERENCE_ID_U64_OFFSET)
+
+	var resource: SaveableResource = _loaded_resources_by_id.get(resource_id)
+	if not resource:
+		var save_dict: Dictionary = _saved_resources_by_id.get(resource_id, {})
+		if not save_dict:
+			push_error("No saved resource found with ID ", resource_id)
+			return null
+		
+		_saved_resources_by_id.erase(resource_id)
+	
+		var script: Script = _decode_resource_reference(save_dict.get(BinarySerializer._SAVED_RESOURCE_SCRIPT_KEY) as PackedByteArray, "Script")
+		if not script:
+			push_error("Failed to decode script for resource with ID ", resource_id, ", cannot load resource")
+			return null
+		
+		save_dict.erase(BinarySerializer._SAVED_RESOURCE_SCRIPT_KEY)
+		
+		@warning_ignore("unsafe_method_access")
+		resource = script.new()
+		resource.load_from_dict(self , save_dict)
+		_loaded_resources_by_id[resource_id] = resource
+
+	return resource

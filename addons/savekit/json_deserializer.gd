@@ -26,7 +26,9 @@ func prepare_load_from_memory(data: PackedByteArray) -> bool:
 	
 	_saved_nodes.assign(save_dict.get(JSONSerializer._NODES_KEY, {}) as Dictionary)
 	_saved_resources_by_id.assign(save_dict.get(JSONSerializer._RESOURCES_KEY, {}) as Dictionary)
-	_node_deserialization_stack = _stack_sort_node_paths()
+
+	_node_deserialization_stack.assign(_saved_nodes.keys())
+	sort_node_paths_in_load_order(_node_deserialization_stack)
 	return true
 
 func _notification(what: int) -> void:
@@ -51,16 +53,16 @@ func decode_var(value: Variant, expected_type: Variant.Type, expected_class_name
 			
 			var saved_resource_id: String = value_dict.get(JSONSerializer._SAVED_RESOURCE_ID_KEY, "")
 			if saved_resource_id:
-				return load_resource(saved_resource_id)
+				return _load_resource(saved_resource_id)
 			
 			var encoded_resource_reference_path: String = value_dict.get(JSONSerializer._ENCODED_RESOURCE_REFERENCE_PATH_KEY, "")
 			if encoded_resource_reference_path:
 				var encoded_resource_reference_uid: String = value_dict.get(JSONSerializer._ENCODED_RESOURCE_REFERENCE_UID_KEY, "")
-				return decode_resource_reference(encoded_resource_reference_path, encoded_resource_reference_uid, expected_class_name)
+				return _decode_resource_reference(encoded_resource_reference_path, encoded_resource_reference_uid, expected_class_name)
 			
 			var encoded_node_reference: String = value_dict.get(JSONSerializer._ENCODED_NODE_REFERENCE_KEY, "")
 			if encoded_node_reference:
-				return decode_node_reference(NodePath(encoded_node_reference))
+				return _decode_node_reference(NodePath(encoded_node_reference))
 			
 			push_warning("Cannot deserialize object from dictionary: ", value_dict)
 			return null
@@ -105,11 +107,11 @@ func _decode_var_with_type_info(value: Variant) -> Variant:
 ## Decodes a reference to a node expected in the scene tree at the given path.
 ##
 ## If the node does not already exist in the scene tree, but does exist in the save data, it will be instantiated and added to the tree. Returns null if the node cannot be found or instantiated.
-func decode_node_reference(node_path: NodePath) -> Node:
+func _decode_node_reference(node_path: NodePath) -> Node:
 	# To ensure we can convert this node path into a valid node reference, we need to effectively "preload" the target node and all of its ancestors.
 	# This process is similar to load_node(), but circumventing the normal order and without actually loading data into the nodes yet.
 	if node_path.get_name_count() > 1:
-		var parent_node := decode_node_reference(node_path.slice(0, -1))
+		var parent_node := _decode_node_reference(node_path.slice(0, -1))
 		if not parent_node:
 			return null
 	
@@ -120,7 +122,7 @@ func decode_node_reference(node_path: NodePath) -> Node:
 ## Decodes a reference to a resource, loading it by UID or path as appropriate.
 ##
 ## Note: [param expected_class_name] should refer to a class that exists within [ClassDB] (i.e., built-in or GDExtension classes). It should [i]not[/i] contain the name of a script-defined [code]class_name[/code].
-func decode_resource_reference(resource_path: String, resource_uid: String = "", expected_class_name: StringName = &"") -> Resource:
+func _decode_resource_reference(resource_path: String, resource_uid: String = "", expected_class_name: StringName = &"") -> Resource:
 	if resource_uid:
 		var id := ResourceUID.text_to_id(resource_uid)
 		if ResourceUID.has_id(id):
@@ -153,20 +155,8 @@ func load_node() -> Node:
 
 	return node
 
-func _stack_sort_node_paths() -> Array[NodePath]:
-	var node_paths: Array[NodePath]
-	node_paths.assign(_saved_nodes.keys())
-
-	# Load nodes in order of depth, to ensure parents are loaded before children.
-	# We'll use this to instantiate any missing nodes along the way.
-	node_paths.sort_custom(func(a: NodePath, b: NodePath) -> bool:
-		# We're creating a stack, so sort nodes to load FIRST at the end
-		return a.get_name_count() > b.get_name_count())
-	
-	return node_paths
-
 ## Loads a [SaveableResource] from the save data. If the resource has already been loaded, the existing instance will be returned.
-func load_resource(id: String) -> SaveableResource:
+func _load_resource(id: String) -> SaveableResource:
 	var resource: SaveableResource = _loaded_resources_by_id.get(id)
 	if not resource:
 		var save_dict: Dictionary = _saved_resources_by_id.get(id, {})
