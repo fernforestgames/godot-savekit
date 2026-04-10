@@ -4,4 +4,5 @@
 # Only include addons/savekit when downloading from the Asset Library.
 /**                 export-ignore
 /addons             !export-ignore
+/addons/savekit     !export-ignore
 /addons/savekit/**  !export-ignore
