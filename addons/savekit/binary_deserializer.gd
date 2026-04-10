@@ -6,7 +6,7 @@ const BinarySerializer := preload("binary_serializer.gd")
 var _node_deserialization_stack: Array[NodePath] = []
 var _saved_nodes: Dictionary[NodePath, Dictionary]
 var _saved_resources_by_id: Dictionary[int, Dictionary]
-var _loaded_resources_by_id: Dictionary[int, SaveableResource]
+var _loaded_resources_by_id: Dictionary[int, SaveKitResource]
 
 func prepare_load_from_memory(data: PackedByteArray) -> bool:
 	if data.size() < BinarySerializer._FILE_HEADER_SIZE:
@@ -160,11 +160,11 @@ func load_node() -> Node:
 
 	return node
 
-## Loads a [SaveableResource] from the save data. If the resource has already been loaded, the existing instance will be returned.
-func _load_resource(buffer: PackedByteArray) -> SaveableResource:
+## Loads a [SaveKitResource] from the save data. If the resource has already been loaded, the existing instance will be returned.
+func _load_resource(buffer: PackedByteArray) -> SaveKitResource:
 	var resource_id := buffer.decode_u64(BinarySerializer._SAVED_RESOURCE_REFERENCE_ID_U64_OFFSET)
 
-	var resource: SaveableResource = _loaded_resources_by_id.get(resource_id)
+	var resource: SaveKitResource = _loaded_resources_by_id.get(resource_id)
 	if not resource:
 		var save_dict: Dictionary = _saved_resources_by_id.get(resource_id, {})
 		if not save_dict:

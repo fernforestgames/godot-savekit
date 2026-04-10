@@ -1,8 +1,6 @@
 extends Area2D
 
-const Deserializer := preload("res://addons/savekit/deserializer.gd")
-
-## Each box owns a BoxData resource that tracks its click count. This demonstrates how SaveableResources are serialized alongside nodes.
+## Each box owns a BoxData resource that tracks its click count. This demonstrates how SaveKitResources are serialized alongside nodes.
 @export var data: BoxData
 
 var _dragging: bool = false
@@ -41,7 +39,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		global_position = get_global_mouse_position() + _drag_offset
 
-func load_from_dict(s: Deserializer, dict: Dictionary) -> void:
+func load_from_dict(s: SaveKitDeserializer, dict: Dictionary) -> void:
 	s.default_load_from_dict(self , dict)
 	_update_label()
 

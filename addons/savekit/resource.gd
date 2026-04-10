@@ -1,9 +1,9 @@
 @abstract
-class_name SaveableResource
+class_name SaveKitResource
 extends Resource
 ## Base class for user-defined resources that can be saved and loaded.
 ##
-## [code]SaveableResource[/code]s are used instead of the base [Resource] class to clearly identify data that is meant for persistence in save files, versus resource data that is part of the game's PCK.
+## [code]SaveKitResource[/code]s are used instead of the base [Resource] class to clearly identify data that is meant for persistence in save files, versus resource data that is part of the game's PCK.
 
 ## Emitted whenever this resource is saved.
 signal saved

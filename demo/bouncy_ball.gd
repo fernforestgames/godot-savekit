@@ -1,15 +1,12 @@
 extends RigidBody2D
 
-const Deserializer := preload("res://addons/savekit/deserializer.gd")
-const Serializer := preload("res://addons/savekit/serializer.gd")
-
-func save_to_dict(s: Serializer) -> Dictionary:
+func save_to_dict(s: SaveKitSerializer) -> Dictionary:
 	return {
 		"transform": s.encode_var(transform),
 		"linear_velocity": s.encode_var(linear_velocity),
 	}
 
-func load_from_dict(s: Deserializer, data: Dictionary) -> void:
+func load_from_dict(s: SaveKitDeserializer, data: Dictionary) -> void:
 	if "transform" in data:
 		var transform_to_set: Transform2D = s.decode_var(data["transform"], TYPE_TRANSFORM2D)
 		PhysicsServer2D.body_set_state(get_rid(), PhysicsServer2D.BODY_STATE_TRANSFORM, transform_to_set)

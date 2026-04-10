@@ -6,7 +6,7 @@ const JSONSerializer := preload("json_serializer.gd")
 var _node_deserialization_stack: Array[NodePath] = []
 var _saved_nodes: Dictionary[NodePath, Dictionary]
 var _saved_resources_by_id: Dictionary[String, Dictionary]
-var _loaded_resources_by_id: Dictionary[String, SaveableResource]
+var _loaded_resources_by_id: Dictionary[String, SaveKitResource]
 
 func prepare_load_from_memory(data: PackedByteArray) -> bool:
 	var json_string := data.get_string_from_utf8()
@@ -155,9 +155,9 @@ func load_node() -> Node:
 
 	return node
 
-## Loads a [SaveableResource] from the save data. If the resource has already been loaded, the existing instance will be returned.
-func _load_resource(id: String) -> SaveableResource:
-	var resource: SaveableResource = _loaded_resources_by_id.get(id)
+## Loads a [SaveKitResource] from the save data. If the resource has already been loaded, the existing instance will be returned.
+func _load_resource(id: String) -> SaveKitResource:
+	var resource: SaveKitResource = _loaded_resources_by_id.get(id)
 	if not resource:
 		var save_dict: Dictionary = _saved_resources_by_id.get(id, {})
 		if not save_dict:

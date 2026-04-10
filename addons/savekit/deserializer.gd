@@ -1,4 +1,5 @@
 @abstract
+class_name SaveKitDeserializer
 extends RefCounted
 ## Base class for deserializers that load saved data into nodes.
 ##

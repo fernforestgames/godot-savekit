@@ -5,7 +5,7 @@ const JSONSerializer := preload("res://addons/savekit/json_serializer.gd")
 const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
 const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
-const MockSaveableResource := preload("res://tests/fixtures/mock_saveable_resource.gd")
+const MockSaveKitResource := preload("res://tests/fixtures/mock_resource.gd")
 
 
 class MockSaveableWithOverride extends MockSaveable:
@@ -92,9 +92,9 @@ func test_encode_resource_returns_reference_dict() -> void:
 	assert_has(result, "path")
 
 
-func test_encode_saveable_resource_returns_id_reference() -> void:
+func test_encode_save_kit_resource_returns_id_reference() -> void:
 	var s := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Sword"
 	var result: Dictionary = s.encode_var(resource)
 	assert_has(result, "res")
@@ -292,7 +292,7 @@ func test_finalize_omits_resources_when_none_saved() -> void:
 
 func test_finalize_includes_resources_when_present() -> void:
 	var s := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Sword"
 	s.save_resource(resource)
 	var result := _parse_finalized(s)
@@ -306,14 +306,14 @@ func test_finalize_includes_resources_when_present() -> void:
 
 func test_save_resource_returns_reference_with_id() -> void:
 	var s := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	var ref: Dictionary = s.save_resource(resource)
 	assert_has(ref, "res")
 
 
 func test_save_resource_deduplicates() -> void:
 	var s := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	var ref1: Dictionary = s.save_resource(resource)
 	var ref2: Dictionary = s.save_resource(resource)
 	assert_eq(ref1["res"], ref2["res"], "Same resource should produce the same ID")
@@ -344,23 +344,23 @@ func test_encode_node_in_dictionary() -> void:
 		assert_not_null(value, "Node inside dict should not be encoded as null")
 
 
-func test_encode_saveable_resource_in_array() -> void:
+func test_encode_save_kit_resource_in_array() -> void:
 	var s := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Gem"
 	var result: Array = s.encode_var([resource])
 	assert_eq(result.size(), 1)
-	assert_not_null(result[0], "SaveableResource inside array should not be encoded as null")
+	assert_not_null(result[0], "SaveKitResource inside array should not be encoded as null")
 
 
-func test_encode_saveable_resource_in_dictionary() -> void:
+func test_encode_save_kit_resource_in_dictionary() -> void:
 	var s := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Gem"
 	var result: Dictionary = s.encode_var({"item": resource})
 	assert_eq(result.size(), 1, "Encoded dict should have one entry")
 	for value: Variant in result.values():
-		assert_not_null(value, "SaveableResource inside dict should not be encoded as null")
+		assert_not_null(value, "SaveKitResource inside dict should not be encoded as null")
 
 
 func test_encode_resource_reference_in_array() -> void:
@@ -391,9 +391,9 @@ func test_encode_node_in_nested_containers() -> void:
 	assert_true(json_string.length() > 0, "Nested containers with a node should produce valid JSON")
 
 
-func test_encode_saveable_resource_in_nested_containers() -> void:
+func test_encode_save_kit_resource_in_nested_containers() -> void:
 	var s := JSONSerializer.new()
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Ring"
 	var result: Variant = s.encode_var([[{"item": resource}]])
 	assert_not_null(result, "Nested containers with a resource should not encode as null")
@@ -406,11 +406,11 @@ func test_encode_mixed_objects_in_array() -> void:
 	var node := Node.new()
 	node.name = "MixNode"
 	add_child_autofree(node)
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Bow"
 	var script: Script = MockSaveable
 	var result: Array = s.encode_var([node, resource, script, 42, "plain"])
 	assert_eq(result.size(), 5, "Mixed array should preserve all elements")
 	assert_not_null(result[0], "Node in mixed array should not be encoded as null")
-	assert_not_null(result[1], "SaveableResource in mixed array should not be encoded as null")
+	assert_not_null(result[1], "SaveKitResource in mixed array should not be encoded as null")
 	assert_not_null(result[2], "Resource in mixed array should not be encoded as null")

@@ -1,4 +1,5 @@
 @abstract
+class_name SaveKitSerializer
 extends RefCounted
 ## Base class for serializers that persist nodes into save data.
 ##
