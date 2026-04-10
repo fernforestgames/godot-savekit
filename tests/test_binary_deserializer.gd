@@ -1,20 +1,24 @@
 @warning_ignore_start("unsafe_call_argument", "inferred_declaration", "unsafe_method_access")
 extends GutTest
 
-const JSONSerializer := preload("res://addons/savekit/json_serializer.gd")
-const JSONDeserializer := preload("res://addons/savekit/json_deserializer.gd")
+const BinarySerializer := preload("res://addons/savekit/binary_serializer.gd")
+const BinaryDeserializer := preload("res://addons/savekit/binary_deserializer.gd")
 const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
 const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
 const MockSaveableResource := preload("res://tests/fixtures/mock_saveable_resource.gd")
 
 
-func _make_deserializer(nodes: Dictionary = {}, resources: Dictionary = {}) -> JSONDeserializer:
-	var data := {"version": 1, "nodes": nodes}
-	if resources:
-		data["resources"] = resources
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(JSON.stringify(data).to_utf8_buffer())
+class MockSaveableWithOverride extends MockSaveable:
+	var save_path_override: Variant = null
+
+
+# Builds a deserializer from the given (optional) populated serializer. When
+# none is provided, the deserializer is loaded from a fresh, empty save.
+func _make_deserializer(serializer: BinarySerializer = null) -> BinaryDeserializer:
+	var s := serializer if serializer else BinarySerializer.new()
+	var d := BinaryDeserializer.new()
+	d.prepare_load_from_memory(s.finalize_save_in_memory())
 	d.scene_tree = get_tree()
 	d.saveable_node_group = &"saveable"
 	return d
@@ -24,9 +28,33 @@ func _make_deserializer(nodes: Dictionary = {}, resources: Dictionary = {}) -> J
 # prepare_load_from_memory
 # =============================================================================
 
-func test_prepare_with_valid_data() -> void:
-	var d := _make_deserializer()
+func test_prepare_with_valid_empty_data() -> void:
+	var s := BinarySerializer.new()
+	var d := BinaryDeserializer.new()
+	var ok := d.prepare_load_from_memory(s.finalize_save_in_memory())
+	assert_true(ok)
 	assert_true(d.is_finished())
+
+
+func test_prepare_with_too_small_data() -> void:
+	var d := BinaryDeserializer.new()
+	var bad_data: PackedByteArray
+	bad_data.resize(2)
+	var ok := d.prepare_load_from_memory(bad_data)
+	assert_false(ok)
+	assert_push_error("too small")
+
+
+func test_prepare_with_invalid_version() -> void:
+	# A buffer of all zeros decodes a version of 0, which doesn't match the
+	# current serialization version. This avoids depending on the specific
+	# byte offset of the version field.
+	var d := BinaryDeserializer.new()
+	var bad_data: PackedByteArray
+	bad_data.resize(16)
+	var ok := d.prepare_load_from_memory(bad_data)
+	assert_false(ok)
+	assert_push_error("Unsupported save data version")
 
 
 func test_prepare_with_nodes() -> void:
@@ -35,85 +63,51 @@ func test_prepare_with_nodes() -> void:
 	add_child_autofree(node)
 	node.add_to_group("saveable")
 
-	var path := str(node.get_path())
-	var d := _make_deserializer({path: {}})
+	var s := BinarySerializer.new()
+	s.save_node(node)
+	var d := _make_deserializer(s)
 	assert_false(d.is_finished())
 
 
-func test_prepare_with_invalid_version() -> void:
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(JSON.stringify({"version": 999}).to_utf8_buffer())
-	assert_push_error("Unsupported save data version")
-
-
-func test_prepare_with_missing_version() -> void:
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(JSON.stringify({"nodes": {}}).to_utf8_buffer())
-	assert_push_error("Unsupported save data version")
-
-
 # =============================================================================
-# decode_var
+# decode_var (round-trip via the serializer)
 # =============================================================================
 
 func test_decode_int() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
-	assert_eq(d.decode_var(JSON.from_native(42), TYPE_INT), 42)
+	assert_eq(d.decode_var(s.encode_var(42), TYPE_INT), 42)
 
 
 func test_decode_float() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
-	assert_eq(d.decode_var(JSON.from_native(3.14), TYPE_FLOAT), 3.14)
+	assert_eq(d.decode_var(s.encode_var(3.14), TYPE_FLOAT), 3.14)
 
 
 func test_decode_string() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
-	assert_eq(d.decode_var(JSON.from_native("hello"), TYPE_STRING), "hello")
+	assert_eq(d.decode_var(s.encode_var("hello"), TYPE_STRING), "hello")
 
 
 func test_decode_bool() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
-	assert_eq(d.decode_var(JSON.from_native(true), TYPE_BOOL), true)
-	assert_eq(d.decode_var(JSON.from_native(false), TYPE_BOOL), false)
+	assert_eq(d.decode_var(s.encode_var(true), TYPE_BOOL), true)
+	assert_eq(d.decode_var(s.encode_var(false), TYPE_BOOL), false)
 
 
 func test_decode_vector2() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
-	var encoded: Variant = JSON.from_native(Vector2(1, 2))
-	var decoded: Variant = d.decode_var(encoded, TYPE_VECTOR2)
-	assert_eq(decoded, Vector2(1, 2))
+	assert_eq(d.decode_var(s.encode_var(Vector2(1, 2)), TYPE_VECTOR2), Vector2(1, 2))
 
 
 func test_decode_color() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
-	var encoded: Variant = JSON.from_native(Color.RED)
-	var decoded: Variant = d.decode_var(encoded, TYPE_COLOR)
-	assert_eq(decoded, Color.RED)
-
-
-func test_decode_rid_returns_null() -> void:
-	var d := _make_deserializer()
-	assert_null(d.decode_var(null, TYPE_RID))
-
-
-func test_decode_resource_reference() -> void:
-	var d := _make_deserializer()
-	var decoded: Variant = d.decode_var(
-		{"path": "res://tests/fixtures/mock_saveable.gd"},
-		TYPE_OBJECT,
-		&"Script",
-	)
-	assert_not_null(decoded)
-
-
-# =============================================================================
-# decode_var — resource reference error paths
-# =============================================================================
-
-func test_decode_resource_reference_invalid_path() -> void:
-	var d := _make_deserializer()
-	var decoded: Variant = d.decode_var({"path": "user://bad/path.gd"}, TYPE_OBJECT, &"Script")
-	assert_null(decoded)
+	assert_eq(d.decode_var(s.encode_var(Color.RED), TYPE_COLOR), Color.RED)
 
 
 # =============================================================================
@@ -137,10 +131,10 @@ func test_remaining_count_matches_nodes() -> void:
 	add_child_autofree(node2)
 	node2.add_to_group("saveable")
 
-	var d := _make_deserializer({
-		str(node1.get_path()): {},
-		str(node2.get_path()): {},
-	})
+	var s := BinarySerializer.new()
+	s.save_node(node1)
+	s.save_node(node2)
+	var d := _make_deserializer(s)
 	assert_eq(d.get_remaining_node_count(), 2)
 	assert_false(d.is_finished())
 
@@ -151,8 +145,9 @@ func test_is_finished_after_loading_all() -> void:
 	add_child_autofree(node)
 	node.add_to_group("saveable")
 
-	var path := str(node.get_path())
-	var d := _make_deserializer({path: {}})
+	var s := BinarySerializer.new()
+	s.save_node(node)
+	var d := _make_deserializer(s)
 	d.load_node()
 	assert_true(d.is_finished())
 	assert_eq(d.get_remaining_node_count(), 0)
@@ -167,9 +162,15 @@ func test_load_node_returns_node() -> void:
 	node.name = "Target"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
+	node._save_data = {"key": "val"}
 
-	var path := str(node.get_path())
-	var d := _make_deserializer({path: {"key": "val"}})
+	var s := BinarySerializer.new()
+	s.save_node(node)
+
+	node._save_data = {}
+	node.loaded_data = {}
+
+	var d := _make_deserializer(s)
 	var loaded := d.load_node()
 	assert_eq(loaded, node)
 	assert_eq(node.loaded_data["key"], "val")
@@ -186,15 +187,12 @@ func test_load_node_loads_parents_before_children() -> void:
 	parent.add_child(child)
 	child.add_to_group("saveable")
 
-	var parent_path := str(parent.get_path())
-	var child_path := str(child.get_path())
+	var s := BinarySerializer.new()
+	# Save in opposite order to verify the deserializer sorts them.
+	s.save_node(child)
+	s.save_node(parent)
 
-	# Intentionally pass child before parent to verify sorting
-	var d := _make_deserializer({
-		child_path: {},
-		parent_path: {},
-	})
-
+	var d := _make_deserializer(s)
 	var first := d.load_node()
 	var second := d.load_node()
 	assert_eq(first, parent, "Parent should be loaded before child")
@@ -202,32 +200,23 @@ func test_load_node_loads_parents_before_children() -> void:
 
 
 func test_load_node_strips_scene_file_path() -> void:
-	var node := MockSaveable.new()
+	# When the saved node has a scene_file_path, it should be consumed by the
+	# deserializer (used for instantiation) and not leak into load_from_dict.
+	var node: MockSaveable = MockSaveableScene.instantiate()
 	node.name = "Target"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
+	node._save_data = {"health": 10}
 
-	var path := str(node.get_path())
-	var d := _make_deserializer({path: {
-		"health": 10,
-		"scene_file_path": "res://tests/fixtures/mock_saveable.tscn",
-	}})
+	var s := BinarySerializer.new()
+	s.save_node(node)
+
+	node.loaded_data = {}
+	var d := _make_deserializer(s)
 	d.load_node()
 	assert_false(node.loaded_data.has("scene_file_path"),
 		"scene_file_path should be stripped before passing to load_from_dict")
 	assert_eq(node.loaded_data["health"], 10)
-
-
-func test_load_node_with_custom_load() -> void:
-	var node := MockSaveable.new()
-	node.name = "Target"
-	add_child_autofree(node)
-	node.add_to_group("saveable")
-
-	var path := str(node.get_path())
-	var d := _make_deserializer({path: {"custom_key": "custom_val"}})
-	d.load_node()
-	assert_eq(node.loaded_data["custom_key"], "custom_val")
 
 
 func test_load_node_with_default_load() -> void:
@@ -235,21 +224,36 @@ func test_load_node_with_default_load() -> void:
 	node.name = "DefaultNode"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
+	node.health = 25
+	node.player_name = "Carol"
+	# Leave score at its default so it isn't included in the save.
 
-	var path := str(node.get_path())
-	var d := _make_deserializer({path: {
-		"health": JSON.from_native(25),
-		"player_name": JSON.from_native("Carol"),
-	}})
+	var s := BinarySerializer.new()
+	s.save_node(node)
+
+	# Modify score to verify load_from_dict doesn't touch absent properties.
+	node.score = 7.0
+
+	var d := _make_deserializer(s)
 	d.load_node()
 	assert_eq(node.health, 25)
 	assert_eq(node.player_name, "Carol")
-	assert_eq(node.score, 0.0, "Untouched property should stay at default")
+	assert_eq(node.score, 7.0, "Untouched property should be left alone")
 
 
 func test_load_node_returns_null_for_missing_node_without_scene() -> void:
-	var path := "/root/NonExistent/Node"
-	var d := _make_deserializer({path: {"val": 1}})
+	# Use save_path_override to record an entry pointing at a non-existent
+	# location with no scene_file_path, so loading should fail.
+	var node := MockSaveableWithOverride.new()
+	node.name = "Source"
+	add_child_autofree(node)
+	node.add_to_group("saveable")
+	node.save_path_override = NodePath("/root/NonExistent/Node")
+
+	var s := BinarySerializer.new()
+	s.save_node(node)
+
+	var d := _make_deserializer(s)
 	var result := d.load_node()
 	assert_null(result)
 	assert_push_error("Cannot instantiate node")
@@ -260,13 +264,14 @@ func test_load_node_returns_null_for_missing_node_without_scene() -> void:
 # =============================================================================
 
 func test_default_load_sets_properties() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
 	var node := MockDefaultSaveable.new()
 	node.name = "Node"
 	add_child_autofree(node)
 	d.default_load_from_dict(node, {
-		"health": JSON.from_native(5),
-		"player_name": JSON.from_native("Test"),
+		"health": s.encode_var(5),
+		"player_name": s.encode_var("Test"),
 	})
 	assert_eq(node.health, 5)
 	assert_eq(node.player_name, "Test")
@@ -274,14 +279,15 @@ func test_default_load_sets_properties() -> void:
 
 
 func test_default_load_with_only_properties_filter() -> void:
+	var s := BinarySerializer.new()
 	var d := _make_deserializer()
 	var node := MockDefaultSaveable.new()
 	node.name = "Node"
 	add_child_autofree(node)
 	d.default_load_from_dict(node, {
-		"health": JSON.from_native(5),
-		"player_name": JSON.from_native("Nope"),
-		"score": JSON.from_native(42.0),
+		"health": s.encode_var(5),
+		"player_name": s.encode_var("Nope"),
+		"score": s.encode_var(42.0),
 	}, PackedStringArray(["health", "score"]))
 	assert_eq(node.health, 5)
 	assert_eq(node.score, 42.0)
@@ -349,8 +355,9 @@ func test_instantiate_fails_without_scene_path() -> void:
 
 
 func test_instantiate_requires_scene_tree() -> void:
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(JSON.stringify({"version": 1, "nodes": {}}).to_utf8_buffer())
+	var s := BinarySerializer.new()
+	var d := BinaryDeserializer.new()
+	d.prepare_load_from_memory(s.finalize_save_in_memory())
 	# scene_tree intentionally NOT set
 	var node := d.find_or_instantiate_node(NodePath("/root/Test"), "")
 	assert_null(node)
@@ -358,55 +365,49 @@ func test_instantiate_requires_scene_tree() -> void:
 
 
 # =============================================================================
-# decode_var — saveable resource error & dedup paths
+# saveable resource round trips
 # =============================================================================
 
-func test_decode_saveable_resource_deduplicates() -> void:
-	var s := JSONSerializer.new()
+func test_saveable_resource_round_trip() -> void:
+	var resource := MockSaveableResource.new()
+	resource.item_name = "Potion"
+	resource.quantity = 5
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var(resource)
+	var d := _make_deserializer(s)
+	var loaded: Variant = d.decode_var(encoded, TYPE_OBJECT, &"SaveableResource")
+	assert_not_null(loaded)
+	assert_eq(loaded.get("item_name"), "Potion")
+	assert_eq(loaded.get("quantity"), 5)
+
+
+func test_saveable_resource_round_trip_deduplicates() -> void:
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Shield"
-	# Encode the same resource twice; both refs should resolve to one instance.
+
+	var s := BinarySerializer.new()
 	var encoded1: Variant = s.encode_var(resource)
 	var encoded2: Variant = s.encode_var(resource)
-	var d := _round_trip_deserializer(s)
+	var d := _make_deserializer(s)
 	var loaded1: Variant = d.decode_var(encoded1, TYPE_OBJECT, &"SaveableResource")
 	var loaded2: Variant = d.decode_var(encoded2, TYPE_OBJECT, &"SaveableResource")
-	assert_eq(loaded1, loaded2, "Same resource instance should be returned")
-
-
-func test_decode_saveable_resource_missing_id() -> void:
-	var d := _make_deserializer()
-	var loaded: Variant = d.decode_var({"res": "nonexistent_id"}, TYPE_OBJECT, &"SaveableResource")
-	assert_null(loaded)
-	assert_push_error("No saved resource found with ID")
+	assert_eq(loaded1, loaded2, "Same resource should yield the same instance")
 
 
 # =============================================================================
-# decode_var — nested objects in containers
+# decode_var — nested objects in containers (round-tripped)
 # =============================================================================
-
-func _round_trip_encode(serializer: JSONSerializer, value: Variant) -> Variant:
-	var encoded: Variant = serializer.encode_var(value)
-	var json_string := JSON.stringify(encoded, "", false)
-	return JSON.parse_string(json_string)
-
-
-func _round_trip_deserializer(serializer: JSONSerializer) -> JSONDeserializer:
-	var save_data := serializer.finalize_save_in_memory()
-	var d := JSONDeserializer.new()
-	d.prepare_load_from_memory(save_data)
-	d.scene_tree = get_tree()
-	return d
-
 
 func test_decode_node_reference_in_array() -> void:
 	var node := Node.new()
 	node.name = "Nested"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, [node])
-	var d := _round_trip_deserializer(s)
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var([node])
+	var d := _make_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded.size(), 1)
 	assert_eq(decoded[0], node, "Node reference inside array should be decoded back to the node")
@@ -417,9 +418,10 @@ func test_decode_node_reference_in_dictionary() -> void:
 	node.name = "Nested"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, {"my_node": node})
-	var d := _round_trip_deserializer(s)
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var({"my_node": node})
+	var d := _make_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	assert_has(decoded, "my_node")
 	assert_eq(decoded["my_node"], node, "Node reference inside dict should be decoded back to the node")
@@ -429,9 +431,10 @@ func test_decode_saveable_resource_in_array() -> void:
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Gem"
 	resource.quantity = 3
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, [resource])
-	var d := _round_trip_deserializer(s)
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var([resource])
+	var d := _make_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded.size(), 1)
 	assert_not_null(decoded[0], "SaveableResource inside array should be decoded")
@@ -443,9 +446,10 @@ func test_decode_saveable_resource_in_dictionary() -> void:
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Gem"
 	resource.quantity = 3
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, {"item": resource})
-	var d := _round_trip_deserializer(s)
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var({"item": resource})
+	var d := _make_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	assert_has(decoded, "item")
 	assert_not_null(decoded["item"], "SaveableResource inside dict should be decoded")
@@ -454,9 +458,9 @@ func test_decode_saveable_resource_in_dictionary() -> void:
 
 func test_decode_resource_reference_in_array() -> void:
 	var script: Script = MockSaveable
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, [script])
-	var d := _round_trip_deserializer(s)
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var([script])
+	var d := _make_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded.size(), 1)
 	assert_not_null(decoded[0], "Resource reference inside array should be decoded to a resource")
@@ -464,9 +468,9 @@ func test_decode_resource_reference_in_array() -> void:
 
 func test_decode_resource_reference_in_dictionary() -> void:
 	var script: Script = MockSaveable
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, {"script": script})
-	var d := _round_trip_deserializer(s)
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var({"script": script})
+	var d := _make_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	assert_has(decoded, "script")
 	assert_not_null(decoded["script"], "Resource reference inside dict should be decoded to a resource")
@@ -477,9 +481,10 @@ func test_decode_node_in_nested_containers() -> void:
 	node.name = "DeepNested"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, {"list": [{"target": node}]})
-	var d := _round_trip_deserializer(s)
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var({"list": [{"target": node}]})
+	var d := _make_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	var inner_list: Array = decoded["list"]
 	var inner_dict: Dictionary = inner_list[0]
@@ -489,9 +494,10 @@ func test_decode_node_in_nested_containers() -> void:
 func test_decode_saveable_resource_in_nested_containers() -> void:
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Ring"
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, [[{"item": resource}]])
-	var d := _round_trip_deserializer(s)
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var([[{"item": resource}]])
+	var d := _make_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	var inner_array: Array = decoded[0]
 	var inner_dict: Dictionary = inner_array[0]
@@ -507,9 +513,10 @@ func test_decode_mixed_objects_in_array() -> void:
 	var resource := MockSaveableResource.new()
 	resource.item_name = "Bow"
 	var script: Script = MockSaveable
-	var s := JSONSerializer.new()
-	var encoded: Variant = _round_trip_encode(s, [node, resource, script, 42, "plain"])
-	var d := _round_trip_deserializer(s)
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var([node, resource, script, 42, "plain"])
+	var d := _make_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded[0], node, "Node in mixed array should be decoded")
 	assert_not_null(decoded[1], "SaveableResource in mixed array should be decoded")
