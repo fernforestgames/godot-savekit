@@ -1,190 +1,121 @@
-# godot-savekit
+# SaveKit for Godot
 
-A Godot 4 addon for saving and loading game state. SaveKit serializes your scene tree to a JSON-compatible dictionary that you can persist however you like.
+A library for saving and loading game state in Godot 4, with pluggable save file formats and a focus on ease of use.
+
+Key features:
+
+- **Easy to get started.** Add nodes to the `saveable` group, then use `SaveManager.save_game()` and `SaveManager.load_game()`.
+- **Saves nodes and resources.** Built-in resources, like textures and packed scenes, are saved as references, while data from nodes and custom `SaveKitResource` subclasses is saved in its entirety. This avoids the code injection risks of Godot's `ResourceLoader`, while supporting complex data.
+- **JSON and binary serialization built-in**, or implement your own custom save file format by extending `SaveKitSerializer` and `SaveKitDeserializer`.
+- **Automatic by default, manual when you need it.** Reflection picks up exported properties for saving/loading automatically, or you can implement custom `save_to_dict` and `load_from_dict` methods for full control.
 
 ## Getting started
 
-1. Enable the plugin in **Project > Project Settings > Plugins**.
-2. Add any nodes you want to save to the `"saveable"` group.
-3. Call `SaveManager.save_scene_tree()` to save, and `SaveManager.load_into_scene_tree(data)` to load.
+1. Enable the plugin in **Project > Project Settings > Plugins**. This also installs a `SaveManager` autoload.
+2. Add all the nodes you want saved to the `saveable` group.
+3. Call one method to save, another to load:
 
 ```gdscript
-# Save
-var data: Dictionary = SaveManager.save_scene_tree()
-var json := JSON.stringify(data)
-FileAccess.open("user://save.json", FileAccess.WRITE).store_string(json)
+# Save to disk under user://save_games/MyGame/Slot 1.json
+SaveManager.save_game(PackedStringArray(["MyGame", "Slot 1"]))
 
-# Load
-var json := FileAccess.open("user://save.json", FileAccess.READ).get_as_text()
-var data: Dictionary = JSON.parse_string(json)
-SaveManager.load_into_scene_tree(data)
+# Load it back later
+SaveManager.load_game(PackedStringArray(["MyGame", "Slot 1"]))
 ```
 
-SaveKit handles the serialization and scene tree manipulation. Persisting the data to disk (or anywhere else) is up to you.
+This will iterate through nodes in the `saveable` group, serialize each node's exported properties, and write the file into `user://save_games/`. Then the reverse is done on load—creating or freeing nodes as needed so the scene tree matches the save file.
 
-## Saving and loading nodes
+There are also other methods offering finer-grained control over the save/load process:
 
-Any node in the `"saveable"` group will be included when saving. There are two approaches for controlling what data gets saved and loaded: **custom methods** and **automatic reflection**.
+```gdscript
+func save_scene_tree_in_memory() -> PackedByteArray
+func save_scene_tree_to_disk(absolute_path: String) -> Error
 
-### Custom save/load methods
+func load_scene_tree_from_memory(data: PackedByteArray) -> bool
+func load_scene_tree_from_file(absolute_path: String) -> Error
+```
 
-Implement `save_to_dict` and `load_from_dict` on your node for full control:
+## Saving nodes
+
+By default, SaveKit uses reflection to save all `@export` and `@export_storage` properties whose values differ from their defaults. For a lot of nodes, this is all you need:
 
 ```gdscript
 extends CharacterBody2D
 
-func save_to_dict(serializer: Serializer) -> Dictionary:
-    return {
-        "health": serializer.encode_var(health),
-        "position": serializer.encode_var(global_position),
-        "inventory": serializer.encode_var(inventory_resource),
-    }
-
-func load_from_dict(deserializer: Deserializer, data: Dictionary) -> void:
-    health = deserializer.decode_var(data["health"], TYPE_INT)
-    global_position = deserializer.decode_var(data["position"], TYPE_VECTOR2)
-    inventory_resource = deserializer.decode_var(data["inventory"], TYPE_OBJECT)
-```
-
-Use `encode_var` / `decode_var` to handle type encoding. This is especially important for values like `Vector2`, `Color`, `Resource` references, and `Node` references, which need special encoding for JSON compatibility.
-
-### Automatic reflection (no custom methods)
-
-If a node does **not** implement `save_to_dict` / `load_from_dict`, SaveKit automatically saves and loads all `@export` and `@export_storage` properties that differ from their default values:
-
-```gdscript
-extends Node
-
 @export var health: int = 100
 @export var player_name: String = ""
-@export_storage var score: float = 0.0
+@export_storage var checkpoint: Vector2
 ```
 
-Properties at their default values are omitted from save data to keep it minimal.
-
-### Mixing both approaches
-
-A custom `save_to_dict` can delegate part of its work to the automatic behavior using `default_save_to_dict` / `default_load_from_dict`, and handle specific properties manually:
+When you need additional control, implement `save_to_dict` and `load_from_dict`:
 
 ```gdscript
-func save_to_dict(serializer: Serializer) -> Dictionary:
-    var data := serializer.default_save_to_dict(self, PackedStringArray(["health", "score"]))
-    data["custom_field"] = compute_custom_value()
-    return data
+extends RigidBody2D
 
-func load_from_dict(deserializer: Deserializer, data: Dictionary) -> void:
-    deserializer.default_load_from_dict(self, data, PackedStringArray(["health", "score"]))
-    restore_custom_value(data.get("custom_field"))
+func save_to_dict(s: SaveKitSerializer) -> Dictionary:
+    return {
+        "transform": s.encode_var(transform),
+        "linear_velocity": s.encode_var(linear_velocity),
+    }
+
+func load_from_dict(s: SaveKitDeserializer, data: Dictionary) -> void:
+    var t: Transform2D = s.decode_var(data["transform"], TYPE_TRANSFORM2D)
+    PhysicsServer2D.body_set_state(get_rid(), PhysicsServer2D.BODY_STATE_TRANSFORM, t)
+
+    linear_velocity = s.decode_var(data["linear_velocity"], TYPE_VECTOR2)
 ```
 
-The `only_properties` parameter filters which exported properties are handled automatically.
+You can also mix the two approaches by calling `serializer.default_save_to_dict()` and `deserializer.default_load_from_dict()` from your implementation.
 
-## Saving and loading resources
+### Node instantiation
 
-For resources that represent save-file data (inventories, quest state, etc.), extend `SaveableResource`:
+If a saved node isn't in the scene tree at load time, SaveKit will instantiate it from the `scene_file_path` it was saved with and parent it where it belongs. Conversely, nodes in the `saveable` group that *aren't* in the save data are freed, so the scene tree always matches the save file after loading.
+
+## Saving resources
+
+For resources that represent persisted data—e.g., inventories, quest state, per-entity stat blocks—extend `SaveKitResource` rather than plain `Resource`:
 
 ```gdscript
-class_name PlayerInventory
-extends SaveableResource
+class_name Inventory
+extends SaveKitResource
 
-@export var items: Array[String] = []
 @export var gold: int = 0
+@export var items: Array[Item]
 ```
 
-`SaveableResource` works like automatic node saving: exported properties with non-default values are serialized. Override `save_to_dict` and `load_from_dict` for custom behavior.
+Any `SaveKitResource` referenced from a saved node is serialized automatically, and deduplicated. Like nodes, `SaveKitResource` uses reflection over exported properties by default, but you can always implement `save_to_dict` and `load_from_dict` for custom behavior.
 
-When a `SaveableResource` is encountered as a property value during serialization, its full data is saved inline. Regular `Resource` subclasses (e.g., textures, scenes) are saved as **references** by path/UID, not by value.
+Note that plain `Resource` references (textures, scenes, and other things baked into the PCK) are saved as path/UID references. SaveKit will only ever load such resources from within the `res://` filesystem, avoiding the risk of code injection from user-provided resource files.
+
+## Lifecycle hooks
+
+There are a variety of signals and methods to hook into the saving and loading process—`before_save`, `after_save`, `before_load`, `after_load`, etc. See the `SaveManager` API documentation for more details.
+
+## Save file formats
+
+SaveKit includes two built-in file formats:
+
+- **JSON** (`json_serializer.gd`, `json_deserializer.gd`) — human-readable, easy to diff and debug.
+- **Binary** (`binary_serializer.gd`, `binary_deserializer.gd`) — compact, obfuscated.
+
+JSON, the default, is recommended in most cases. File size is rarely a concern, and making saves human-readable is more friendly to your players.
+
+You can also implement a custom file format by extending `SaveKitSerializer` and `SaveKitDeserializer` and implementing the abstract methods.
+
+Assign `SaveManager.serializer_script` and `SaveManager.deserializer_script` to switch between formats or use your own:
 
 ```gdscript
-# SaveableResource property: data is serialized into the save file
-@export var inventory: PlayerInventory
-
-# Regular Resource property: only a res:// reference is saved
-@export var sprite_texture: Texture2D
+SaveManager.serializer_script = preload("res://addons/savekit/binary_serializer.gd")
+SaveManager.deserializer_script = preload("res://addons/savekit/binary_deserializer.gd")
+SaveManager.save_file_extension = ".sav"
 ```
 
-`SaveableResource` emits `saved` and `loaded` signals, and `changed` after loading.
+## Learn more
 
-## SaveManager
+The [included demo](demo/) has a small interactive scene that is fully saveable, and includes a live view into the JSON file format.
 
-`SaveManager` is installed as an autoload singleton when the plugin is enabled. It can also be instantiated as a regular node for independent save managers.
+All public classes (`SaveManager`, `SaveKitSerializer`, `SaveKitDeserializer`, `SaveKitResource`) have documentation comments that work with Godot's built-in help. Browse them from the editor for the full API reference.
 
-### Methods
+## License
 
-| Method | Description |
-|---|---|
-| `save_scene_tree() -> Dictionary` | Saves all nodes in the saveable group and returns the save data. |
-| `load_into_scene_tree(data: Dictionary)` | Loads save data into the scene tree, adding, updating, and removing nodes as needed. |
-
-### Signals
-
-| Signal | Description |
-|---|---|
-| `before_save` / `after_save` | Emitted at the start/end of `save_scene_tree`. |
-| `before_load` / `after_load` | Emitted at the start/end of `load_into_scene_tree`. |
-| `node_saved(node)` | Emitted after each node is saved. |
-| `node_loaded(node)` | Emitted after each node is loaded. |
-| `node_created(node)` | Emitted when a node is instantiated from a PackedScene during loading. |
-| `node_removed(node)` | Emitted when a saveable node is removed because it was not in the save data. |
-
-### Lifecycle hooks
-
-Nodes in the saveable group can implement these methods to run logic at specific points in the save/load process:
-
-| Method | When it runs |
-|---|---|
-| `before_save()` | Before any nodes are serialized. |
-| `after_save()` | After all nodes have been serialized (called in reverse tree order). |
-| `before_load()` | Before any nodes are loaded. Only called on nodes already in the tree. |
-| `after_load()` | After all nodes have been loaded (called in reverse tree order). Includes newly created nodes. |
-
-### Properties
-
-| Property | Default | Description |
-|---|---|---|
-| `saveable_node_group` | `"saveable"` | The group name used to find saveable nodes. |
-| `before_save_method` | `"before_save"` | Method name called before saving. |
-| `after_save_method` | `"after_save"` | Method name called after saving. |
-| `before_load_method` | `"before_load"` | Method name called before loading. |
-| `after_load_method` | `"after_load"` | Method name called after loading. |
-
-## Node instantiation during loading
-
-If a node exists in the save data but not in the scene tree, SaveKit will attempt to instantiate it from the `PackedScene` it was originally created from (using `scene_file_path`). The new node is automatically added to the saveable group and to the correct parent.
-
-Nodes that exist in the scene tree but are **not** in the save data are removed (via `queue_free`) during loading.
-
-## Advanced usage
-
-### Save path override
-
-By default, nodes are keyed in save data by their scene tree path. To override this, add a `save_path_override` property:
-
-```gdscript
-var save_path_override: NodePath = ^"/root/World/Player"
-```
-
-This is useful when a node might move in the tree but should always map to the same save data entry.
-
-### Encoding references in custom save methods
-
-Within `save_to_dict`, use these serializer methods to encode references:
-
-- `encode_var(value)` -- Encodes any supported value, automatically choosing the right strategy.
-- `encode_resource_reference(resource)` -- Encodes a `res://` path reference to a resource (for assets in the PCK).
-- `encode_node_reference(node)` -- Encodes a reference to another node in the scene tree.
-- `save_resource(resource)` -- Saves a `SaveableResource` inline and returns a reference to it.
-
-Within `load_from_dict`, use these deserializer methods to decode:
-
-- `decode_var(value, expected_type, expected_class_name)` -- Decodes any saved value back to its runtime type.
-- `decode_resource_reference(path, uid, class_name)` -- Loads a resource by path or UID.
-- `load_resource(id)` -- Loads a previously saved `SaveableResource` by its ID.
-
-## Running tests
-
-Tests use [GUT](https://gut.readthedocs.io) and run via the Godot CLI:
-
-```bash
-godot --headless -s addons/gut/gut_cmdln.gd
-```
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

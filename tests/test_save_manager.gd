@@ -18,7 +18,6 @@ var _test_dir: String
 
 
 func before_each() -> void:
-	print("before_each")
 	_manager = SaveManager.new()
 	# Use a unique temporary directory for each test so file system state
 	# from one test never leaks into another.
@@ -155,6 +154,7 @@ func test_save_skips_nodes_queued_for_deletion() -> void:
 	node.queue_free()
 	var result := _parse_save_data(_manager.save_scene_tree_in_memory())
 	assert_eq(result["nodes"].size(), 0)
+	assert_push_warning("is queued for deletion")
 
 
 # =============================================================================
@@ -312,7 +312,7 @@ func test_round_trip_with_scene_instantiated_node() -> void:
 
 	var restored: MockSaveable = get_node_or_null("SceneNode")
 	assert_not_null(restored, "Node should have been re-instantiated from its scene")
-	autoqfree(restored)
+	autofree(restored)
 	assert_eq(restored.loaded_data["coins"], 42)
 	assert_true(restored.is_in_group("saveable"))
 	assert_signal_emitted(_manager, "node_loaded")

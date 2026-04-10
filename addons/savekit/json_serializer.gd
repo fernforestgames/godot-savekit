@@ -62,8 +62,8 @@ func encode_var(value: Variant) -> Variant:
 			return null
 
 		TYPE_OBJECT:
-			if value is SaveableResource:
-				return save_resource(value as SaveableResource)
+			if value is SaveKitResource:
+				return save_resource(value as SaveKitResource)
 			elif value is Resource:
 				return encode_resource_reference(value as Resource)
 			elif value is Node:
@@ -144,10 +144,10 @@ func save_node(node: Node) -> void:
 
 	_saved_nodes[node_path] = save_dict
 
-## Adds [param resource] to the save data, serializing its properties according to [method SaveableResource.save_to_dict]. Returns a reference that can be used to link to this resource from other saved data.
+## Adds [param resource] to the save data, serializing its properties according to [method SaveKitResource.save_to_dict]. Returns a reference that can be used to link to this resource from other saved data.
 ##
 ## If [param resource] has already been saved, it will not be saved again; instead, a reference to the previously saved data will be returned.
-func save_resource(resource: SaveableResource) -> Variant:
+func save_resource(resource: SaveKitResource) -> Variant:
 	var instance_id := str(resource.get_instance_id())
 	if instance_id not in _saved_resources_by_id:
 		# Register a placeholder before encoding, to avoid infinite recursion in case of circular references

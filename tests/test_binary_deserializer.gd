@@ -6,7 +6,7 @@ const BinaryDeserializer := preload("res://addons/savekit/binary_deserializer.gd
 const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
 const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
-const MockSaveableResource := preload("res://tests/fixtures/mock_saveable_resource.gd")
+const MockSaveKitResource := preload("res://tests/fixtures/mock_resource.gd")
 
 
 class MockSaveableWithOverride extends MockSaveable:
@@ -365,33 +365,33 @@ func test_instantiate_requires_scene_tree() -> void:
 
 
 # =============================================================================
-# saveable resource round trips
+# SaveKitResource round trips
 # =============================================================================
 
-func test_saveable_resource_round_trip() -> void:
-	var resource := MockSaveableResource.new()
+func test_save_kit_resource_round_trip() -> void:
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Potion"
 	resource.quantity = 5
 
 	var s := BinarySerializer.new()
 	var encoded: Variant = s.encode_var(resource)
 	var d := _make_deserializer(s)
-	var loaded: Variant = d.decode_var(encoded, TYPE_OBJECT, &"SaveableResource")
+	var loaded: Variant = d.decode_var(encoded, TYPE_OBJECT, &"SaveKitResource")
 	assert_not_null(loaded)
 	assert_eq(loaded.get("item_name"), "Potion")
 	assert_eq(loaded.get("quantity"), 5)
 
 
-func test_saveable_resource_round_trip_deduplicates() -> void:
-	var resource := MockSaveableResource.new()
+func test_save_kit_resource_round_trip_deduplicates() -> void:
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Shield"
 
 	var s := BinarySerializer.new()
 	var encoded1: Variant = s.encode_var(resource)
 	var encoded2: Variant = s.encode_var(resource)
 	var d := _make_deserializer(s)
-	var loaded1: Variant = d.decode_var(encoded1, TYPE_OBJECT, &"SaveableResource")
-	var loaded2: Variant = d.decode_var(encoded2, TYPE_OBJECT, &"SaveableResource")
+	var loaded1: Variant = d.decode_var(encoded1, TYPE_OBJECT, &"SaveKitResource")
+	var loaded2: Variant = d.decode_var(encoded2, TYPE_OBJECT, &"SaveKitResource")
 	assert_eq(loaded1, loaded2, "Same resource should yield the same instance")
 
 
@@ -427,8 +427,8 @@ func test_decode_node_reference_in_dictionary() -> void:
 	assert_eq(decoded["my_node"], node, "Node reference inside dict should be decoded back to the node")
 
 
-func test_decode_saveable_resource_in_array() -> void:
-	var resource := MockSaveableResource.new()
+func test_decode_save_kit_resource_in_array() -> void:
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Gem"
 	resource.quantity = 3
 
@@ -437,13 +437,13 @@ func test_decode_saveable_resource_in_array() -> void:
 	var d := _make_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded.size(), 1)
-	assert_not_null(decoded[0], "SaveableResource inside array should be decoded")
+	assert_not_null(decoded[0], "SaveKitResource inside array should be decoded")
 	assert_eq(decoded[0].get("item_name"), "Gem")
 	assert_eq(decoded[0].get("quantity"), 3)
 
 
-func test_decode_saveable_resource_in_dictionary() -> void:
-	var resource := MockSaveableResource.new()
+func test_decode_save_kit_resource_in_dictionary() -> void:
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Gem"
 	resource.quantity = 3
 
@@ -452,7 +452,7 @@ func test_decode_saveable_resource_in_dictionary() -> void:
 	var d := _make_deserializer(s)
 	var decoded: Dictionary = d.decode_var(encoded, TYPE_DICTIONARY)
 	assert_has(decoded, "item")
-	assert_not_null(decoded["item"], "SaveableResource inside dict should be decoded")
+	assert_not_null(decoded["item"], "SaveKitResource inside dict should be decoded")
 	assert_eq(decoded["item"].get("item_name"), "Gem")
 
 
@@ -491,8 +491,8 @@ func test_decode_node_in_nested_containers() -> void:
 	assert_eq(inner_dict["target"], node, "Node deeply nested in dict>array>dict should be decoded")
 
 
-func test_decode_saveable_resource_in_nested_containers() -> void:
-	var resource := MockSaveableResource.new()
+func test_decode_save_kit_resource_in_nested_containers() -> void:
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Ring"
 
 	var s := BinarySerializer.new()
@@ -501,7 +501,7 @@ func test_decode_saveable_resource_in_nested_containers() -> void:
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	var inner_array: Array = decoded[0]
 	var inner_dict: Dictionary = inner_array[0]
-	assert_not_null(inner_dict["item"], "SaveableResource deeply nested should be decoded")
+	assert_not_null(inner_dict["item"], "SaveKitResource deeply nested should be decoded")
 	assert_eq(inner_dict["item"].get("item_name"), "Ring")
 
 
@@ -510,7 +510,7 @@ func test_decode_mixed_objects_in_array() -> void:
 	node.name = "MixNode"
 	add_child_autofree(node)
 	node.add_to_group("saveable")
-	var resource := MockSaveableResource.new()
+	var resource := MockSaveKitResource.new()
 	resource.item_name = "Bow"
 	var script: Script = MockSaveable
 
@@ -519,7 +519,7 @@ func test_decode_mixed_objects_in_array() -> void:
 	var d := _make_deserializer(s)
 	var decoded: Array = d.decode_var(encoded, TYPE_ARRAY)
 	assert_eq(decoded[0], node, "Node in mixed array should be decoded")
-	assert_not_null(decoded[1], "SaveableResource in mixed array should be decoded")
+	assert_not_null(decoded[1], "SaveKitResource in mixed array should be decoded")
 	assert_eq(decoded[1].get("item_name"), "Bow")
 	assert_not_null(decoded[2], "Resource reference in mixed array should be decoded")
 	assert_eq(decoded[3], 42)
