@@ -8,6 +8,7 @@ const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
 const MockSaveKitResource := preload("res://tests/fixtures/mock_resource.gd")
 const MockTypedCollection := preload("res://tests/fixtures/mock_typed_collection.gd")
+const MockTypedCollectionResource := preload("res://tests/fixtures/mock_typed_collection_resource.gd")
 
 
 func _make_deserializer(nodes: Dictionary = {}, resources: Dictionary = {}) -> JSONDeserializer:
@@ -546,6 +547,41 @@ func test_default_load_populates_typed_dictionary_property() -> void:
 		"Typed Dictionary[String, int] property should be repopulated from save data")
 	assert_eq(node.scores, {"a": 1, "b": 2} as Dictionary[String, int],
 		"Typed Dictionary[String, int] property should round-trip its entries")
+
+
+func test_save_kit_resource_typed_array_round_trip() -> void:
+	# Regression test for issue #14 on the SaveKitResource load path (the
+	# README's `Array[Item]` example). The resource's default load_from_dict
+	# calls set(), which silently refuses the untyped Array decode_var produces.
+	var resource := MockTypedCollectionResource.new()
+	resource.numbers.assign([10, 20, 30])
+
+	var s := JSONSerializer.new()
+	var encoded: Variant = s.encode_var(resource)
+	var d := _round_trip_deserializer(s)
+	var loaded: Variant = d.decode_var(encoded, TYPE_OBJECT, &"SaveKitResource")
+	assert_not_null(loaded)
+	assert_eq(loaded.numbers.size(), 3,
+		"Typed Array[int] property on a resource should be repopulated from save data")
+	assert_eq(loaded.numbers, [10, 20, 30] as Array[int],
+		"Typed Array[int] property on a resource should round-trip its element values")
+
+
+func test_save_kit_resource_typed_dictionary_round_trip() -> void:
+	# Regression test for issue #14 on the SaveKitResource load path, for typed
+	# Dictionary properties.
+	var resource := MockTypedCollectionResource.new()
+	resource.scores.assign({"a": 1, "b": 2})
+
+	var s := JSONSerializer.new()
+	var encoded: Variant = s.encode_var(resource)
+	var d := _round_trip_deserializer(s)
+	var loaded: Variant = d.decode_var(encoded, TYPE_OBJECT, &"SaveKitResource")
+	assert_not_null(loaded)
+	assert_eq(loaded.scores.size(), 2,
+		"Typed Dictionary[String, int] property on a resource should be repopulated from save data")
+	assert_eq(loaded.scores, {"a": 1, "b": 2} as Dictionary[String, int],
+		"Typed Dictionary[String, int] property on a resource should round-trip its entries")
 
 
 func test_decode_mixed_objects_in_array() -> void:
