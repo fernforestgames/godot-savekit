@@ -65,7 +65,17 @@ func load_from_dict(s: Deserializer, data: Dictionary) -> void:
 		var classname: StringName = property.get("class_name", &"")
 
 		var decoded_value: Variant = s.decode_var(encoded_value, type, classname)
-		set(name, decoded_value)
+		match type:
+			TYPE_ARRAY:
+				var existing_array: Array = get(name)
+				existing_array.assign(decoded_value as Array)
+			
+			TYPE_DICTIONARY:
+				var existing_dict: Dictionary = get(name)
+				existing_dict.assign(decoded_value as Dictionary)
+			
+			_:
+				set(name, decoded_value)
 
 	loaded.emit()
 	emit_changed()

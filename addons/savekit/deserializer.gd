@@ -97,7 +97,17 @@ func default_load_from_dict(node: Node, data: Dictionary, only_properties: Packe
 		var classname: StringName = property.get("class_name", &"")
 
 		var decoded_value: Variant = decode_var(encoded_value, type, classname)
-		node.set(name, decoded_value)
+		match type:
+			TYPE_ARRAY:
+				var existing_array: Array = node.get(name)
+				existing_array.assign(decoded_value as Array)
+			
+			TYPE_DICTIONARY:
+				var existing_dict: Dictionary = node.get(name)
+				existing_dict.assign(decoded_value as Dictionary)
+
+			_:
+				node.set(name, decoded_value)
 
 ## Finds a node at [param node_path] in the scene tree, or instantiates it from [param scene_file_path] and adds it to the scene tree if it did not already exist. Returns null if the node could not be found or instantiated.
 ##

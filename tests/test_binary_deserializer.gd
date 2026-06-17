@@ -7,6 +7,8 @@ const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
 const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
 const MockSaveKitResource := preload("res://tests/fixtures/mock_resource.gd")
+const MockTypedCollection := preload("res://tests/fixtures/mock_typed_collection.gd")
+const MockTypedCollectionResource := preload("res://tests/fixtures/mock_typed_collection_resource.gd")
 
 
 class MockSaveableWithOverride extends MockSaveable:
@@ -524,3 +526,84 @@ func test_decode_mixed_objects_in_array() -> void:
 	assert_not_null(decoded[2], "Resource reference in mixed array should be decoded")
 	assert_eq(decoded[3], 42)
 	assert_eq(decoded[4], "plain")
+
+
+# =============================================================================
+# decode_var — typed collections (https://github.com/fernforestgames/godot-savekit/issues/14)
+# =============================================================================
+
+func test_default_load_populates_typed_array_property() -> void:
+	# Regression test for issue #14: a typed Array property (e.g. the README's
+	# `Array[Item]`) must be repopulated when loading. decode_var decodes arrays
+	# into an *untyped* Array, which set() silently refuses to assign to a
+	# typed-array property, leaving it stuck at its default empty value.
+	var node := MockTypedCollection.new()
+	node.name = "TypedColl"
+	add_child_autofree(node)
+	node.add_to_group("saveable")
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var([10, 20, 30])
+	var d := _make_deserializer(s)
+
+	d.default_load_from_dict(node, {"numbers": encoded})
+	assert_eq(node.numbers.size(), 3,
+		"Typed Array[int] property should be repopulated from save data")
+	assert_eq(node.numbers, [10, 20, 30] as Array[int],
+		"Typed Array[int] property should round-trip its element values")
+
+
+func test_default_load_populates_typed_dictionary_property() -> void:
+	# Regression test for issue #14: same bug as typed arrays, but for typed
+	# Dictionary properties. decode_var decodes dictionaries into an *untyped*
+	# Dictionary, which set() silently refuses to assign to a typed-dictionary
+	# property, leaving it stuck at its default empty value.
+	var node := MockTypedCollection.new()
+	node.name = "TypedColl"
+	add_child_autofree(node)
+	node.add_to_group("saveable")
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var({"a": 1, "b": 2})
+	var d := _make_deserializer(s)
+
+	d.default_load_from_dict(node, {"scores": encoded})
+	assert_eq(node.scores.size(), 2,
+		"Typed Dictionary[String, int] property should be repopulated from save data")
+	assert_eq(node.scores, {"a": 1, "b": 2} as Dictionary[String, int],
+		"Typed Dictionary[String, int] property should round-trip its entries")
+
+
+func test_save_kit_resource_typed_array_round_trip() -> void:
+	# Regression test for issue #14 on the SaveKitResource load path (the
+	# README's `Array[Item]` example). The resource's default load_from_dict
+	# calls set(), which silently refuses the untyped Array decode_var produces.
+	var resource := MockTypedCollectionResource.new()
+	resource.numbers.assign([10, 20, 30])
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var(resource)
+	var d := _make_deserializer(s)
+	var loaded: Variant = d.decode_var(encoded, TYPE_OBJECT, &"SaveKitResource")
+	assert_not_null(loaded)
+	assert_eq(loaded.numbers.size(), 3,
+		"Typed Array[int] property on a resource should be repopulated from save data")
+	assert_eq(loaded.numbers, [10, 20, 30] as Array[int],
+		"Typed Array[int] property on a resource should round-trip its element values")
+
+
+func test_save_kit_resource_typed_dictionary_round_trip() -> void:
+	# Regression test for issue #14 on the SaveKitResource load path, for typed
+	# Dictionary properties.
+	var resource := MockTypedCollectionResource.new()
+	resource.scores.assign({"a": 1, "b": 2})
+
+	var s := BinarySerializer.new()
+	var encoded: Variant = s.encode_var(resource)
+	var d := _make_deserializer(s)
+	var loaded: Variant = d.decode_var(encoded, TYPE_OBJECT, &"SaveKitResource")
+	assert_not_null(loaded)
+	assert_eq(loaded.scores.size(), 2,
+		"Typed Dictionary[String, int] property on a resource should be repopulated from save data")
+	assert_eq(loaded.scores, {"a": 1, "b": 2} as Dictionary[String, int],
+		"Typed Dictionary[String, int] property on a resource should round-trip its entries")
