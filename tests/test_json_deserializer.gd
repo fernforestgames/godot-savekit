@@ -7,6 +7,7 @@ const MockSaveable := preload("res://tests/fixtures/mock_saveable.gd")
 const MockSaveableScene := preload("res://tests/fixtures/mock_saveable.tscn")
 const MockDefaultSaveable := preload("res://tests/fixtures/mock_default_saveable.gd")
 const MockSaveKitResource := preload("res://tests/fixtures/mock_resource.gd")
+const MockTypedCollection := preload("res://tests/fixtures/mock_typed_collection.gd")
 
 
 func _make_deserializer(nodes: Dictionary = {}, resources: Dictionary = {}) -> JSONDeserializer:
@@ -497,6 +498,54 @@ func test_decode_save_kit_resource_in_nested_containers() -> void:
 	var inner_dict: Dictionary = inner_array[0]
 	assert_not_null(inner_dict["item"], "SaveKitResource deeply nested should be decoded")
 	assert_eq(inner_dict["item"].get("item_name"), "Ring")
+
+
+# =============================================================================
+# decode_var — typed collections (https://github.com/fernforestgames/godot-savekit/issues/14)
+# =============================================================================
+
+func test_default_load_populates_typed_array_property() -> void:
+	# Regression test for issue #14: a typed Array property (e.g. the README's
+	# `Array[Item]`) must be repopulated when loading. decode_var decodes arrays
+	# into an *untyped* Array, which set() silently refuses to assign to a
+	# typed-array property, leaving it stuck at its default empty value.
+	var node := MockTypedCollection.new()
+	node.name = "TypedColl"
+	add_child_autofree(node)
+	node.add_to_group("saveable")
+
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, [10, 20, 30])
+	var d := _round_trip_deserializer(s)
+	d.saveable_node_group = &"saveable"
+
+	d.default_load_from_dict(node, {"numbers": encoded})
+	assert_eq(node.numbers.size(), 3,
+		"Typed Array[int] property should be repopulated from save data")
+	assert_eq(node.numbers, [10, 20, 30] as Array[int],
+		"Typed Array[int] property should round-trip its element values")
+
+
+func test_default_load_populates_typed_dictionary_property() -> void:
+	# Regression test for issue #14: same bug as typed arrays, but for typed
+	# Dictionary properties. decode_var decodes dictionaries into an *untyped*
+	# Dictionary, which set() silently refuses to assign to a typed-dictionary
+	# property, leaving it stuck at its default empty value.
+	var node := MockTypedCollection.new()
+	node.name = "TypedColl"
+	add_child_autofree(node)
+	node.add_to_group("saveable")
+
+	var s := JSONSerializer.new()
+	var encoded: Variant = _round_trip_encode(s, {"a": 1, "b": 2})
+	var d := _round_trip_deserializer(s)
+	d.saveable_node_group = &"saveable"
+
+	d.default_load_from_dict(node, {"scores": encoded})
+	assert_eq(node.scores.size(), 2,
+		"Typed Dictionary[String, int] property should be repopulated from save data")
+	assert_eq(node.scores, {"a": 1, "b": 2} as Dictionary[String, int],
+		"Typed Dictionary[String, int] property should round-trip its entries")
 
 
 func test_decode_mixed_objects_in_array() -> void:
